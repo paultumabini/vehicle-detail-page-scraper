@@ -1,4 +1,4 @@
-# VDP URL Scraper (Scrapes Bucket)
+# VDP Scraper (Scrapes Bucket)
 
 Django application for managing dealer **vehicle detail page (VDP)** scraping: target sites, spider templates, crawl stats, and a dashboard for monitoring scrape volume over time. Scrapy spiders live under `scrapebucket/` and persist results through Django pipelines.
 
@@ -67,8 +67,8 @@ Django application for managing dealer **vehicle detail page (VDP)** scraping: t
 ### 1. Clone and virtualenv
 
 ```bash
-git clone https://github.com/paultumabini/vdp-urls-scraper.git
-cd vdp-urls-scraper
+git clone https://github.com/paultumabini/vehicle-detail-page-scraper.git
+cd vehicle-detail-page-scraper
 python3 -m venv venv
 source venv/bin/activate   # Windows: venv\Scripts\activate
 pip install -r requirements.txt
@@ -152,4 +152,4 @@ The function is **idempotent** — a module-level `_CONFIGURED` flag means subse
 
 ## License / contact
 
-Project by **paultumabini** — [github.com/paultumabini/vdp-urls-scraper](https://github.com/paultumabini/vdp-urls-scraper).
+Project by **paultumabini** — [github.com/paultumabini/vehicle-detail-page-scraper](https://github.com/paultumabini/vehicle-detail-page-scraper).
