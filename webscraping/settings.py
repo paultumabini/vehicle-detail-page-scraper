@@ -68,6 +68,7 @@ INSTALLED_APPS = [
     'project.api',
     'jazzmin',
     'crispy_forms',
+    'crispy_bootstrap4',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -228,16 +229,35 @@ CRISPY_TEMPLATE_PACK = 'bootstrap4'
 # Jazzmin (admin UI)
 # -----------------------------------------------------------------------------
 
+
+def jazzmin_user_avatar(user):
+    """Sidebar avatar from users.Profile.image (related name: profile)."""
+    from django.templatetags.static import static
+
+    try:
+        return user.profile.image.url
+    except Exception:
+        return static('vendor/adminlte/img/user2-160x160.jpg')
+
+
 JAZZMIN_SETTINGS = {
     'site_logo': 'images/sb_sm.png',
-    'show_ui_builder': True,
+    'show_ui_builder': False,
     'copyright': 'Scrape Bucket',
-    'user_avatar': None,
+    'user_avatar': jazzmin_user_avatar,
+    'changeform_format': 'horizontal_tabs',
+    'custom_css': 'css/admin-extra.css',
+    'custom_js': 'js/admin-extra.js',
 }
 
 JAZZMIN_UI_TWEAKS = {
-    'theme': 'cosmo',
+    'theme': 'flatly',
     'hide_admin_paginator': True,
+    'navbar': 'navbar-white navbar-light',
+    'sidebar': 'sidebar-dark-primary',
+    'accent': 'accent-primary',
+    'actions_sticky_top': True,
+    'footer_fixed': False,
 }
 
 

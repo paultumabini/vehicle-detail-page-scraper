@@ -1,17 +1,4 @@
-{% extends "admin/base_site.html" %} 
-{% load static %} 
+{% extends "admin/base.html" %}
 {% block extrahead %}
-<link
-  rel="stylesheet"
-  type="text/css"
-  href="{% static 'css/admin-extra.css' %}"
-/>
-<script src="{% static 'js/admin-extra.js'%}"></script>
-
-<script type="text/javascript">
-  window.addEventListener('DOMContentLoaded', event => {
-    runAdminScript('{{user.profile.image.url}}');
-  });
-</script>
-
+{{ block.super }}
 {% endblock %}

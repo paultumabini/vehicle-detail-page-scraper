@@ -123,6 +123,7 @@ class ReynoldsSpider(scrapy.Spider):
 
         yield loader.load_item()
 
-    async def close_page(self, error):
-        page = error.request.meta['playwright_page']
-        await page.close()
+    async def close_page(self, failure):
+        page = failure.request.meta.get('playwright_page')
+        if page is not None:
+            await page.close()
