@@ -1,56 +1,237 @@
-.nav-link.active i.nav-icon {
-  color: #00ff00;
+/* -----------------------------------------------------------------------------
+ * Scrape Bucket — Jazzmin admin polish (custom_css in settings)
+ * ----------------------------------------------------------------------------- */
+
+:root {
+  --sb-admin-accent: #2563eb;
+  --sb-admin-accent-soft: rgba(37, 99, 235, 0.08);
+  --sb-admin-surface: #ffffff;
+  --sb-admin-border: #e8ecf1;
+  --sb-admin-text: #1e293b;
+  --sb-admin-text-muted: #64748b;
+  --sb-admin-hover: #f8fafc;
+  --sb-account-active: #16a34a;
+  --sb-account-inactive: #94a3b8;
+  --sb-account-deleted: #475569;
+  --sb-radius-sm: 6px;
+  --sb-radius-pill: 999px;
+  --sb-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
 }
 
-/* status */
-.status.active,
-.status.inactive,
-.status.pending,
-.status.failed,
-.status.paused {
-  font-size: 12px;
-  font-weight: 700;
-  color: #fff;
-  border-radius: 4px;
-}
+/* ----- Changelist table ---------------------------------------------------- */
 
-.status.active {
-  background: linear-gradient(310deg, #11a030 0%, #92e22c 100%);
-  padding: 0.2rem 0.77rem;
-}
-
-.status.inactive {
-  background: linear-gradient(310deg, #627594 0%, #a8b8d8 100%);
-  padding: 0.2rem 0.45rem;
-}
-
-.status.failed {
-  background: linear-gradient(310deg, #b82121 0%, #ff6666 100%);
-  padding: 0.2rem 0.77rem;
-}
-
-.status.pending {
-  background: linear-gradient(310deg, #c34f24 0%, #ff9670 100%);
-  padding: 0.2rem 0.45rem;
-}
-
-.status.paused {
-  background: linear-gradient(310deg, #ab00c1 0%, #ff72ff 100%);
-  padding: 0.2rem 0.77rem;
-}
-/* profile image */
-/* .user-panel .image {
-  position: relative;
-  margin-left: 0.8rem;
+.change-list .card {
+  border: 1px solid var(--sb-admin-border);
+  border-radius: 10px;
+  box-shadow: var(--sb-shadow-sm);
   overflow: hidden;
-  height: 34px;
+}
+
+.change-list #result_list {
+  margin-bottom: 0;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.change-list #result_list thead th {
+  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+  border-bottom: 1px solid var(--sb-admin-border);
+  color: var(--sb-admin-text-muted);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  padding: 0.65rem 0.75rem;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.change-list #result_list tbody td {
+  border-bottom: 1px solid #f1f5f9;
+  color: var(--sb-admin-text);
+  font-size: 0.875rem;
+  padding: 0.6rem 0.75rem;
+}
+
+.change-list #result_list tbody tr:hover td {
+  background-color: var(--sb-admin-hover);
+}
+
+.change-list #result_list tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.change-list #result_list a {
+  color: var(--sb-admin-accent);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.change-list #result_list a:hover {
+  text-decoration: underline;
+}
+
+.change-list #result_list th,
+.change-list #result_list td {
+  vertical-align: middle;
+}
+
+/*
+ * Account column: center dealer account indicators on project changelists
+ * (model-aimdealer, model-targetsite, model-spiderlog).
+ */
+.model-aimdealer.change-list #result_list th.column-account_status,
+.model-aimdealer.change-list #result_list td.field-account_status,
+.model-targetsite.change-list #result_list th.column-account_status,
+.model-targetsite.change-list #result_list td.field-account_status,
+.model-spiderlog.change-list #result_list th.column-account_status,
+.model-spiderlog.change-list #result_list td.field-account_status {
+  text-align: center;
+  width: 4.25rem;
+}
+
+/* ----- Dealer account indicators (AimDealer.account) ----------------------- */
+
+.account-indicator {
+  align-items: center;
+  cursor: help;
+  display: inline-flex;
+  justify-content: center;
+  line-height: 0;
+  min-height: 1.125rem;
+  min-width: 1.125rem;
+}
+
+/* Active: filled green dot */
+.account-dot {
   border-radius: 50%;
-  width: 34px;
-  padding-left: unset;
+  display: inline-block;
+  flex-shrink: 0;
+  height: 0.625rem;
+  width: 0.625rem;
+}
+
+.account-dot--active {
+  background-color: var(--sb-account-active);
+  box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.2);
+}
+
+/* Inactive: hollow gray ring */
+.account-dot--inactive {
+  background: transparent;
+  border: 2px solid var(--sb-account-inactive);
+  box-sizing: border-box;
+  height: 0.75rem;
+  width: 0.75rem;
+}
+
+/* Unknown */
+.account-dot--unknown {
+  background-color: #cbd5e1;
+  opacity: 0.85;
+}
+
+/* Deleted: stroke trash icon — darker gray, slightly larger for legibility */
+.account-indicator--deleted {
+  color: var(--sb-account-deleted);
+  min-width: 1.25rem;
+}
+
+.account-icon--deleted {
+  display: block;
+  flex-shrink: 0;
+}
+
+/* ----- TargetSite scrape setup pills (scrape_status column) ---------------- */
+
+.status-pill.status {
+  border-radius: var(--sb-radius-pill);
+  box-shadow: var(--sb-shadow-sm);
+  display: inline-block;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.status-pill.status.active {
+  background: linear-gradient(135deg, #15803d 0%, #22c55e 100%);
+  color: #fff;
+  padding: 0.22rem 0.65rem;
+}
+
+.status-pill.status.inactive {
+  background: linear-gradient(135deg, #475569 0%, #94a3b8 100%);
+  color: #fff;
+  padding: 0.22rem 0.5rem;
+}
+
+.status-pill.status.failed {
+  background: linear-gradient(135deg, #b91c1c 0%, #ef4444 100%);
+  color: #fff;
+  padding: 0.22rem 0.65rem;
+}
+
+.status-pill.status.pending {
+  background: linear-gradient(135deg, #c2410c 0%, #fb923c 100%);
+  color: #fff;
+  padding: 0.22rem 0.5rem;
+}
+
+.status-pill.status.paused {
+  background: linear-gradient(135deg, #7e22ce 0%, #c084fc 100%);
+  color: #fff;
+  padding: 0.22rem 0.65rem;
+}
+
+/* ----- Sidebar (Jazzmin / AdminLTE) ---------------------------------------- */
+
+/*
+ * Active nav: green left bar as indicator; white icon/text on blue bg
+ * (green icon alone clashes with accent-primary sidebar highlight).
+ */
+.main-sidebar .nav-sidebar > .nav-item > .nav-link.active {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+  border-left: 3px solid var(--sb-account-active);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  color: #fff !important;
+}
+
+.main-sidebar .nav-sidebar > .nav-item > .nav-link.active i.nav-icon {
+  color: #fff !important;
+  text-shadow: 0 0 1px rgba(0, 0, 0, 0.2);
+}
+
+.main-sidebar .nav-sidebar > .nav-item > .nav-link.active p {
+  color: #fff !important;
+  font-weight: 600;
+}
+
+/* Submenu active item — same treatment */
+.main-sidebar .nav-sidebar .nav-treeview > .nav-item > .nav-link.active {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+  border-left: 3px solid var(--sb-account-active);
+  color: #f8fafc !important;
+}
+
+.main-sidebar .nav-sidebar .nav-treeview > .nav-item > .nav-link.active i.nav-icon {
+  color: #f8fafc !important;
 }
 
 .user-panel .image img {
-  height: 100%;
-  width: 100%;
+  border: 2px solid var(--sb-admin-border);
+  border-radius: 50%;
+  height: 2.125rem;
   object-fit: cover;
-} */
+  width: 2.125rem;
+}
+
+/* Filter chips / search bar spacing on changelist */
+.change-list #changelist-search {
+  border-radius: var(--sb-radius-sm);
+}
+
+.change-list .actions select {
+  border-radius: var(--sb-radius-sm);
+}

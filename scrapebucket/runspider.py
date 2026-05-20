@@ -14,6 +14,7 @@ Bootstrap order (order matters):
 """
 
 import argparse
+import logging
 import sys
 
 # ---------------------------------------------------------------------------
@@ -45,8 +46,22 @@ from scrapy.utils.project import get_project_settings
 from twisted.internet import defer, reactor
 
 configure_logging()
+logger = logging.getLogger(__name__)
 settings = get_project_settings()
 runner = CrawlerRunner(settings)
+
+
+def _active_target_sites(spider_name: str):
+    """TargetSite rows that ``match_spiders`` would schedule for a single-spider run."""
+    return TargetSite.objects.filter(spider=spider_name, status='Active')
+
+
+def _safe_reactor_stop() -> None:
+    # ``@defer.inlineCallbacks`` may finish synchronously when there is nothing to
+    # ``yield``; calling ``reactor.stop()`` before ``reactor.run()`` raises
+    # ``ReactorNotRunning``.
+    if reactor.running:
+        reactor.stop()
 
 
 @defer.inlineCallbacks
@@ -61,11 +76,12 @@ def crawl(arg: str):
             if status.lower() != 'active':
                 continue
             yield runner.crawl(spider, url=url)
-            print(f'Done running: {spider.__name__}')
-        reactor.stop()
+            logger.info('Done running: %s', spider.__name__)
+        _safe_reactor_stop()
         return
 
     # Single-spider mode: match by name, delete only that site's prior scrapes.
+    ran = False
     for spider, url, domain, status in match_spiders(TargetSite, settings):
         if status.lower() != 'active':
             continue
@@ -75,9 +91,16 @@ def crawl(arg: str):
         if ts is not None:
             ts.scrapes.all().delete()
         yield runner.crawl(spider, url=url)
-        print(f'Done running: {spider.__name__}')
+        logger.info('Done running: %s', spider.__name__)
+        ran = True
 
-    reactor.stop()
+    # Safety net: early exit in ``__main__`` should prevent reaching here with no sites.
+    if not ran:
+        logger.warning(
+            'No active TargetSite rows for spider "%s"; nothing to crawl.', arg_l
+        )
+
+    _safe_reactor_stop()
 
 
 if __name__ == '__main__':
@@ -91,6 +114,17 @@ if __name__ == '__main__':
         help='Spider domain name (e.g. "autojini") or "all" to run every active spider.',
     )
     args = parser.parse_args()
+    spider_arg = args.spider.lower()
+
+    # Skip Twisted/Scrapy entirely when there are no active targets (e.g. cron with
+    # zero dealerdotcom sites). Avoids starting the reactor with nothing to crawl.
+    if spider_arg != 'all':
+        if not _active_target_sites(spider_arg).exists():
+            logger.info(
+                'No active TargetSite rows for spider "%s"; skipping crawl.',
+                spider_arg,
+            )
+            sys.exit(0)
 
     crawl(args.spider)
     # Blocks until the last crawl call completes and reactor.stop() is reached.

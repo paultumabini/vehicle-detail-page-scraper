@@ -5,28 +5,134 @@ from django.contrib import admin
 from django.contrib.admin import DateFieldListFilter
 from django.contrib.auth.admin import UserAdmin
 from django.contrib.auth.models import User
+from django.http import HttpResponseRedirect
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 
 from .models import AimDealer, Project, Scrape, SpiderLog, TargetSite, Webprovider
 from .utils import ScrapeEntryCode
 
-ACTIVE_COLOR = '#28a745'
-INACTIVE_COLOR = '#fea95e'
-ERROR_COLOR = '#ff0000'
 MANILA_TZ = pytz.timezone('Asia/Manila')
 
+_ACCOUNT_LABELS = {
+    'ACTIVE': 'Active',
+    'INACTIVE': 'Inactive',
+    'DELETED': 'Deleted',
+}
 
-def _status_color(status_value):
-    if status_value == 'ACTIVE':
-        return ACTIVE_COLOR
-    if status_value == 'INACTIVE':
-        return INACTIVE_COLOR
-    return ERROR_COLOR
+# Stroke trash icon — reads clearly at small sizes (filled icons collapse to a bar).
+_DELETED_ICON = (
+    '<svg class="account-icon account-icon--deleted" viewBox="0 0 24 24" '
+    'width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.25" '
+    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">'
+    '<path d="M3 6h18"/>'
+    '<path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>'
+    '<path d="M6 6l1 14h10l1-14"/>'
+    '<line x1="10" y1="11" x2="10" y2="17"/>'
+    '<line x1="14" y1="11" x2="14" y2="17"/>'
+    '</svg>'
+)
+
+
+def _account_status_icon(account_value):
+    """Active = filled dot, Inactive = hollow ring, Deleted = trash icon."""
+    label = _ACCOUNT_LABELS.get(account_value, account_value or 'Unknown')
+
+    if account_value == 'DELETED':
+        return format_html(
+            '<span class="account-indicator account-indicator--deleted" '
+            'title="{}" aria-label="Account: {}">{}</span>',
+            label,
+            label,
+            mark_safe(_DELETED_ICON),
+        )
+    if account_value == 'ACTIVE':
+        return format_html(
+            '<span class="account-indicator" title="{}" aria-label="Account: {}">'
+            '<span class="account-dot account-dot--active"></span></span>',
+            label,
+            label,
+        )
+    if account_value == 'INACTIVE':
+        return format_html(
+            '<span class="account-indicator" title="{}" aria-label="Account: {}">'
+            '<span class="account-dot account-dot--inactive"></span></span>',
+            label,
+            label,
+        )
+    return format_html(
+        '<span class="account-indicator" title="{}" aria-label="Account: {}">'
+        '<span class="account-dot account-dot--unknown"></span></span>',
+        label,
+        label,
+    )
 
 
 def _format_manila_datetime(dt_value):
     return pytz.utc.localize(dt_value).astimezone(MANILA_TZ).strftime('%Y-%m-%d %I:%M:%S %p')
+
+
+# Shared query-string key for dealer account sidebar filters (AimDealer, TargetSite, SpiderLog).
+ACCOUNT_FILTER_PARAM = 'dealer_account'
+ACCOUNT_FILTER_ALL = 'all'  # explicit value so "All" does not fall back to the ACTIVE default
+ACCOUNT_FILTER_DEFAULT = 'ACTIVE'
+
+
+def make_dealer_account_filter(field_path):
+    """Build a list_filter for ``AimDealer.account`` or a related path (e.g. ``site_name__account``)."""
+
+    class DealerAccountListFilter(admin.SimpleListFilter):
+        title = 'account'
+        parameter_name = ACCOUNT_FILTER_PARAM
+
+        def lookups(self, request, model_admin):
+            return AimDealer.ACCOUNT_STATUS
+
+        def queryset(self, request, queryset):
+            value = self.value()
+            if value == ACCOUNT_FILTER_ALL:
+                return queryset
+            if value:
+                return queryset.filter(**{field_path: value})
+            # Fallback when the param is missing (Mixin redirect normally sets ACTIVE first).
+            return queryset.filter(**{field_path: ACCOUNT_FILTER_DEFAULT})
+
+        def choices(self, changelist):
+            # Django's built-in "All" omits the param; we use ``all`` so it is not treated as ACTIVE.
+            yield {
+                'selected': self.value() == ACCOUNT_FILTER_ALL,
+                'query_string': changelist.get_query_string(
+                    {self.parameter_name: ACCOUNT_FILTER_ALL},
+                ),
+                'display': 'All',
+            }
+            for lookup, title in self.lookup_choices:
+                yield {
+                    'selected': self.value() == str(lookup),
+                    'query_string': changelist.get_query_string(
+                        {self.parameter_name: lookup},
+                    ),
+                    'display': title,
+                }
+
+    return DealerAccountListFilter
+
+
+# One filter class per admin model; field_path matches how each queryset reaches AimDealer.account.
+AimDealerAccountFilter = make_dealer_account_filter('account')
+TargetSiteAccountFilter = make_dealer_account_filter('site_name__account')
+SpiderLogAccountFilter = make_dealer_account_filter('target_site__site_name__account')
+
+
+class DefaultActiveAccountAdminMixin:
+    """Open changelist with ACTIVE selected; other filters in the query string are preserved."""
+
+    def changelist_view(self, request, extra_context=None):
+        if ACCOUNT_FILTER_PARAM not in request.GET:
+            query = request.GET.copy()
+            query[ACCOUNT_FILTER_PARAM] = ACCOUNT_FILTER_DEFAULT
+            return HttpResponseRedirect(f'{request.path}?{query.urlencode()}')
+        return super().changelist_view(request, extra_context)
 
 
 class UserAdmin(UserAdmin):
@@ -40,15 +146,15 @@ class UserAdmin(UserAdmin):
     )
 
 
-class AimDealerAdminView(admin.ModelAdmin):
+class AimDealerAdminView(DefaultActiveAccountAdminMixin, admin.ModelAdmin):
     list_max_show_all = 500
     list_per_page = 10
-    list_filter = ['account', 'web_provider', 'account_manager']
+    # Account filter defaults to ACTIVE; use sidebar "All" for every status.
+    list_filter = [AimDealerAccountFilter, 'web_provider', 'account_manager']
     list_display_links = ('dealer_id', 'dealer_name')
     ordering = ('dealer_name',)
 
     list_display = (
-        'account_icon',
         'account_status',
         'dealer_id',
         'dealer_name',
@@ -78,26 +184,9 @@ class AimDealerAdminView(admin.ModelAdmin):
             "<a href='{url}' target='_blank'>{url}</a>", url=obj.site_url
         )
 
-    def account_icon(self, obj):
-        if obj.account == 'ACTIVE':
-            return True
-        if obj.account == 'INACTIVE':
-            return None
-        return False
-
-    account_icon.boolean = True
-
-    # function to color the account status text
-    @admin.display(
-        description='Status',
-        ordering='account',
-    )
+    @admin.display(description='Account', ordering='account')
     def account_status(self, obj):
-        return format_html(
-            '<strong><p style="color:{}">{}</p></strong>',
-            _status_color(obj.account),
-            obj.account,
-        )
+        return _account_status_icon(obj.account)
 
     # format date
     @admin.display(ordering='date_created')
@@ -138,9 +227,55 @@ class AimDealerAdminView(admin.ModelAdmin):
         super().save_model(request, obj, form, change)
 
 
-class TargetSiteAdminView(admin.ModelAdmin, ScrapeEntryCode):
+class TargetSiteAdminView(DefaultActiveAccountAdminMixin, admin.ModelAdmin, ScrapeEntryCode):
     # list_per_page = 10
-    list_filter = ['site_name__account', 'status', 'web_provider']
+    fieldsets = (
+        (
+            None,
+            {
+                'fields': (
+                    'status',
+                    'entry_code',
+                    'project',
+                    'site_id',
+                    'site_name',
+                    'site_url',
+                    'web_provider',
+                    'feed_id',
+                    'spider',
+                    'author',
+                    'updated_by',
+                    'note',
+                ),
+            },
+        ),
+        (
+            'Scraped field flags',
+            {
+                'classes': ('collapse',),
+                'fields': (
+                    'condition',
+                    'unit',
+                    'year',
+                    'make',
+                    'model',
+                    'trim',
+                    'stock_number',
+                    'vin',
+                    'vehicle_url',
+                    'msrp',
+                    'price',
+                    'selling_price',
+                    'rebate',
+                    'discount',
+                    'images',
+                    'images_count',
+                ),
+            },
+        ),
+    )
+    # Account filter on linked dealer; defaults to ACTIVE (see DefaultActiveAccountAdminMixin).
+    list_filter = [TargetSiteAccountFilter, 'status', 'web_provider']
     list_display_links = ['target_site_dealer_name']
     ordering = ('-entry_code',)
 
@@ -168,15 +303,11 @@ class TargetSiteAdminView(admin.ModelAdmin, ScrapeEntryCode):
         'feed_id',
     ]
 
-    # from `aimdealer.account` via foreign key at `site_name`
-    @admin.display(ordering='site_name__account', description='account')
+    @admin.display(ordering='site_name__account', description='Account')
     def account_status(self, obj):
-        return format_html(
-            '<strong><span style="color:{}">{}</span></strong>',
-            _status_color(obj.site_name.account),
-            obj.site_name.account,
-        )
-
+        if not obj.site_name_id:
+            return '—'
+        return _account_status_icon(obj.site_name.account)
 
     # style at `admin-extra.css`
     @admin.display(ordering='status', description='setup')
@@ -194,12 +325,10 @@ class TargetSiteAdminView(admin.ModelAdmin, ScrapeEntryCode):
         
         # Return safely using placeholders
         return format_html(
-            '<span class="status {}">{}</span>',
+            '<span class="status-pill status {}">{}</span>',
             css_class,
-            obj.status
+            obj.status,
         )
-
-    account_status.allow_tags = True
 
     # sorting by `site_name__dealer_id`
     @admin.display(ordering='site_name__dealer_id', description='DID')
@@ -309,10 +438,12 @@ class DateYesterdayFieldListFilter(DateFieldListFilter):
         )
 
 
-class SpiderlogsAdminView(admin.ModelAdmin):
+class SpiderlogsAdminView(DefaultActiveAccountAdminMixin, admin.ModelAdmin):
     # list_max_show_all = 500
     # list_per_page = 15
+    # Account filter via target_site → site_name; defaults to ACTIVE.
     list_filter = (
+        SpiderLogAccountFilter,
         'target_site__web_provider',
         ('date_created', DateYesterdayFieldListFilter),
     )
@@ -340,13 +471,12 @@ class SpiderlogsAdminView(admin.ModelAdmin):
         'date_created',
     ]  # date search pattern: YYYY-MM-DD
 
-    @admin.display(ordering='target_site__site_name__account', description='account')
+    @admin.display(ordering='target_site__site_name__account', description='Account')
     def account_status(self, obj):
-        return format_html(
-            '<strong><span style="color:{}">{}</span></strong>',
-            _status_color(obj.target_site.site_name.account),
-            obj.target_site.site_name.account,
-        )
+        dealer = obj.target_site.site_name
+        if dealer is None:
+            return '—'
+        return _account_status_icon(dealer.account)
 
     @admin.display(ordering='target_site__site_name__dealer_id', description='DID')
     def target_site_dealer_id(self, obj):

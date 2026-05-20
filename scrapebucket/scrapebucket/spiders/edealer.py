@@ -9,13 +9,40 @@ from ..spider_helpers.response_json import loads_response_body
 
 
 class EdealerSpider(scrapy.Spider):
+    """Scrape eDealer inventory listings (legacy AJAX API and v4 WordPress HTML)."""
+
     name = 'edealer'
     domain_name = ''
+
+    # Browser UA shared by v4 GET requests; some sites 403 without it.
+    _USER_AGENT = (
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+        '(KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36'
+    )
+
+    def _browser_headers(self, referer=None):
+        # v4 listing pages are server-rendered HTML; use browser-like headers.
+        headers = {
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'User-Agent': self._USER_AGENT,
+        }
+        if referer:
+            headers['Referer'] = referer
+        return headers
 
     def start_requests(self):
         self.domain_name = '.'.join(urlparse(self.url).netloc.split('.')[-2:]).replace(
             '-', ''
         )
+
+        # eDealer v4 (WordPress): GET /inventory/{new,used}/ — vehicles in data-* attrs.
+        for path in ('inventory/new/', 'inventory/used/'):
+            yield scrapy.Request(
+                url=f'{self.url}{path}',
+                callback=self.parse,
+                headers=self._browser_headers(),
+            )
 
         headers = {
             'Accept': '*/*',
@@ -29,40 +56,70 @@ class EdealerSpider(scrapy.Spider):
             'Sec-Ch-ua': '"Google Chrome";v="111", "Not(A:Brand";v="8", "Chromium";v="111"',
             'Sec-Fetch-Mode': 'cors',
             'Sec-Fetch-Site': 'same-origin',
-            'user-agent': (
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
-                '(KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36'
-            ),
+            'user-agent': self._USER_AGENT,
             'X-Requested-With': 'XMLHttpRequest',
         }
 
-        yield scrapy.FormRequest(
-            url=f'{self.url}new/',
-            method='POST',
-            headers=headers,
-            formdata={
-                'ajax': 'true',
-                'refresh': 'true',
-            },
-        )
-
-        yield scrapy.FormRequest(
-            url=f'{self.url}used/',
-            method='POST',
-            headers=headers,
-            formdata={
-                'ajax': 'true',
-                'refresh': 'true',
-            },
-        )
+        # Legacy eDealer: POST /{new,used}/ returns JSON (vehicleCellHTML).
+        # On migrated sites these 301 to /inventory/* and POST returns 404 — harmless.
+        for path in ('new/', 'used/'):
+            yield scrapy.FormRequest(
+                url=f'{self.url}{path}',
+                method='POST',
+                headers=headers,
+                formdata={
+                    'ajax': 'true',
+                    'refresh': 'true',
+                },
+                meta={'legacy_ajax': True},
+            )
 
     def parse(self, response):
-        res = loads_response_body(
-            response.body, url=response.url, label=self.name
-        )
-        if not res:
+        # Legacy AJAX returns JSON with Content-Type text/html — detect by leading `{`/`[`.
+        body = response.body.lstrip()
+        if body.startswith((b'{', b'[')):
+            res = loads_response_body(
+                response.body, url=response.url, label=self.name
+            )
+            if isinstance(res, dict) and res.get('vehicles') is not None:
+                yield from self._parse_ajax(response, res)
+                return
+
+        # v4 listing HTML only; skip legacy POST failures and bad redirects.
+        if response.meta.get('legacy_ajax') or 'inventory/' not in response.url:
             return
 
+        yield from self._parse_inventory_html(response)
+
+    def _parse_inventory_html(self, response):
+        # v4 cards expose VIN/slug on the listing row; VDP is /inventory/{slug}/.
+        seen_ids = set()
+
+        for card in response.css('[data-inventoryitemid]'):
+            item_id = card.attrib.get('data-inventoryitemid')
+            slug = card.attrib.get('data-slug')
+            vin = card.attrib.get('data-vin')
+            if not item_id or not slug or not vin or item_id in seen_ids:
+                continue
+            seen_ids.add(item_id)
+
+            loader = ItemLoader(ScrapebucketItem())
+            loader.add_value('vehicle_url', response.urljoin(f'/inventory/{slug}/'))
+            loader.add_value('vin', vin)
+            loader.add_value('domain', self.domain_name)
+            yield loader.load_item()
+
+        # Follow page-next only (one page at a time) to avoid Cloudflare 403s.
+        next_href = response.css('nav.pagination-base li.page-next a::attr(href)').get()
+        if next_href:
+            yield response.follow(
+                next_href,
+                callback=self.parse,
+                headers=self._browser_headers(referer=response.url),
+            )
+
+    def _parse_ajax(self, response, res):
+        # Original spider logic: parse vehicleCellHTML fragments from AJAX JSON.
         items = res.get('vehicles') or []
 
         for item in items:
@@ -112,10 +169,7 @@ class EdealerSpider(scrapy.Spider):
                 'Sec-Ch-ua': '"Google Chrome";v="111", "Not(A:Brand";v="8", "Chromium";v="111"',
                 'Sec-Fetch-Mode': 'cors',
                 'Sec-Fetch-Site': 'same-origin',
-                'user-agent': (
-                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
-                    '(KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36'
-                ),
+                'user-agent': self._USER_AGENT,
                 'X-Requested-With': 'XMLHttpRequest',
             }
             yield scrapy.FormRequest(
@@ -127,4 +181,5 @@ class EdealerSpider(scrapy.Spider):
                     'refresh': 'true',
                 },
                 callback=self.parse,
+                meta={'legacy_ajax': True},
             )
