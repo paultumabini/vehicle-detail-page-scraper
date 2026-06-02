@@ -25,7 +25,7 @@ class ReynoldsCrawlerScript(CrawlSpider):
         },
         # 'SPIDER_MIDDLEWARES': {
         #     'scrapebucket.middlewares.JobStatLogsMiddleware': 300,
-        #     'scrapebucket.middlewares.VdpUrlsMiddleWare': 300,
+        #     'scrapebucket.pipelines.VdpUrlFtpExportPipeline': 400,
         # },
         'TWISTED_REACTOR': 'twisted.internet.asyncioreactor.AsyncioSelectorReactor',
         'DOWNLOAD_HANDLERS': {

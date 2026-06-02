@@ -26,9 +26,9 @@ class TadvantageScrollSpider(scrapy.Spider):
 
     custom_settings = {
         'DOWNLOADER_MIDDLEWARES': {'scrapebucket.middlewares.ScrapebucketDownloaderMiddleware': 543},
+        # VDP FTP export is enabled globally via VdpUrlFtpExportPipeline in settings.
         'SPIDER_MIDDLEWARES': {
             'scrapebucket.middlewares.JobStatLogsMiddleware': 300,
-            'scrapebucket.middlewares.VdpUrlsMiddleWare': 300,
         },
         'TWISTED_REACTOR': 'twisted.internet.asyncioreactor.AsyncioSelectorReactor',
         'DOWNLOAD_HANDLERS': {
