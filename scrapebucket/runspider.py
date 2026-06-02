@@ -51,9 +51,10 @@ settings = get_project_settings()
 runner = CrawlerRunner(settings)
 
 
-def _active_target_sites(spider_name: str):
+def _runnable_target_sites(spider_name: str):
     """TargetSite rows that ``match_spiders`` would schedule for a single-spider run."""
-    return TargetSite.objects.filter(spider=spider_name, status='Active')
+    # Must stay in sync with ``get_urls`` in urls_crawl (``.runnable()`` queryset).
+    return TargetSite.objects.filter(spider=spider_name).runnable()
 
 
 def _safe_reactor_stop() -> None:
@@ -72,9 +73,8 @@ def crawl(arg: str):
     if arg_l == 'all':
         # Full re-crawl: wipe all previous scrape records first.
         Scrape.objects.all().delete()
-        for spider, url, domain, status in match_spiders(TargetSite, settings):
-            if status.lower() != 'active':
-                continue
+        # ``match_spiders`` already filters via ``TargetSite.objects.runnable()``.
+        for spider, url, domain, _status in match_spiders(TargetSite, settings):
             yield runner.crawl(spider, url=url)
             logger.info('Done running: %s', spider.__name__)
         _safe_reactor_stop()
@@ -82,9 +82,8 @@ def crawl(arg: str):
 
     # Single-spider mode: match by name, delete only that site's prior scrapes.
     ran = False
-    for spider, url, domain, status in match_spiders(TargetSite, settings):
-        if status.lower() != 'active':
-            continue
+    # Runnable-only rows from ``match_spiders``; no extra status/account checks here.
+    for spider, url, domain, _status in match_spiders(TargetSite, settings):
         if spider.__name__.lower() != f'{arg_l}spider':
             continue
         ts = TargetSite.objects.filter(site_id__exact=domain).first()
@@ -97,7 +96,7 @@ def crawl(arg: str):
     # Safety net: early exit in ``__main__`` should prevent reaching here with no sites.
     if not ran:
         logger.warning(
-            'No active TargetSite rows for spider "%s"; nothing to crawl.', arg_l
+            'No runnable TargetSite rows for spider "%s"; nothing to crawl.', arg_l
         )
 
     _safe_reactor_stop()
@@ -116,12 +115,12 @@ if __name__ == '__main__':
     args = parser.parse_args()
     spider_arg = args.spider.lower()
 
-    # Skip Twisted/Scrapy entirely when there are no active targets (e.g. cron with
-    # zero dealerdotcom sites). Avoids starting the reactor with nothing to crawl.
+    # Skip Twisted/Scrapy when nothing is runnable (e.g. cron with zero active sites).
+    # Uses the same ``.runnable()`` queryset as ``match_spiders``, not status alone.
     if spider_arg != 'all':
-        if not _active_target_sites(spider_arg).exists():
+        if not _runnable_target_sites(spider_arg).exists():
             logger.info(
-                'No active TargetSite rows for spider "%s"; skipping crawl.',
+                'No runnable TargetSite rows for spider "%s"; skipping crawl.',
                 spider_arg,
             )
             sys.exit(0)

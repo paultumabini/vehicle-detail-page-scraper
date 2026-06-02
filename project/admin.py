@@ -1,6 +1,7 @@
 import datetime
 
 import pytz
+from django.db.models import Max, OuterRef, Subquery
 from django.contrib import admin
 from django.contrib.admin import DateFieldListFilter
 from django.contrib.auth.admin import UserAdmin
@@ -375,18 +376,16 @@ class TargetSiteAdminView(DefaultActiveAccountAdminMixin, admin.ModelAdmin, Scra
             "<a href='{url}' target='_blank'>{url}</a>", url=obj.site_url
         )
 
-    # get total `spider_logs.items_scraped` via foreign key using related_name='spider_logs'
-    @admin.display(ordering='spider_logs__items_scraped', description='Last Scraped')
+    # Annotated in ``get_queryset`` so sorting does not JOIN one row per child record.
+    @admin.display(ordering='last_log_items_scraped', description='Last Scraped')
     def last_scraped(self, obj):
         try:
-            last_log = obj.spider_logs.last()
-
-            if not last_log or last_log.items_scraped is None:
+            count = obj.last_log_items_scraped
+            if count is None:
                 return mark_safe('<strong style="color:#ff0000" title="Failed to scrape">Error!</strong>')
 
             did = obj.site_name.dealer_id
             d_name = obj.site_name.dealer_name
-            count = last_log.items_scraped
 
             return format_html(
                 '<a href="/admin/project/scrape/?q={did} {name}" target="_blank"><u><strong>{count}</strong></u></a>',
@@ -397,22 +396,27 @@ class TargetSiteAdminView(DefaultActiveAccountAdminMixin, admin.ModelAdmin, Scra
         except Exception:
             return mark_safe('<strong style="color:#ff0000" title="Failed to scrape">Error!</strong>')
 
-    # get from `scrapes.last_checked` via foreign key using `related_name='scrapes'`
-    @admin.display(ordering='scrapes__last_checked', description='Last Run')
+    # Latest scrape timestamp per site; sort key is ``last_scrape_checked`` (see ``get_queryset``).
+    @admin.display(ordering='last_scrape_checked', description='Last Run')
     def last_run(self, obj):
-        try:
-            lr = TargetSite.objects.filter(site_id=obj.site_id).first()
-            return lr.scrapes.last().last_checked.strftime("%Y-%m-%d")
-        except BaseException:
+        checked = getattr(obj, 'last_scrape_checked', None)
+        if checked is None:
             return mark_safe(
                 '<strong> <p style="color:#ff0000" title="Failed to scrape">Error!</p> </strong>'
             )
+        return checked.strftime("%Y-%m-%d")
 
-    # To avoid duplicating rows values when sorting table at UI
     def get_queryset(self, request):
         qs = super().get_queryset(request)
-        # Avoid duplicate rows from JOIN-heavy admin sorting/filtering.
-        return qs.distinct()
+        # Do not order list_display columns by ``scrapes__*`` / ``spider_logs__*`` directly:
+        # each related row duplicates the TargetSite in the changelist when sorted.
+        latest_log = SpiderLog.objects.filter(target_site_id=OuterRef('pk')).order_by(
+            '-date_created'
+        )
+        return qs.annotate(
+            last_scrape_checked=Max('scrapes__last_checked'),
+            last_log_items_scraped=Subquery(latest_log.values('items_scraped')[:1]),
+        )
 
 
 class DateYesterdayFieldListFilter(DateFieldListFilter):

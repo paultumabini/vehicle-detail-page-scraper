@@ -45,8 +45,36 @@ class AimDealer(models.Model):
     def __str__(self):
         return f'{self.dealer_id} - {self.dealer_name}'
 
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        # Keep TargetSite.status aligned with AIM account (runspider uses TargetSite.objects.runnable()).
+        if self.account == 'DELETED':
+            TargetSite.objects.filter(site_name_id=self.dealer_id).exclude(
+                status='Inactive'
+            ).update(status='Inactive')
+
+
+class TargetSiteQuerySet(models.QuerySet):
+    def runnable(self):
+        """
+        Sites eligible for scheduled crawls (``runspider``, ``match_spiders``).
+
+        ``status`` is the operator-facing on/off switch; excluding ``DELETED`` is a
+        belt-and-suspenders guard when AIM account and TargetSite status drift apart.
+        """
+        return (
+            self.filter(status='Active')
+            .exclude(site_name__account='DELETED')
+        )
+
+
+class TargetSiteManager(models.Manager.from_queryset(TargetSiteQuerySet)):
+    """Default manager; exposes ``TargetSite.objects.runnable()`` for crawl scheduling."""
+
 
 class TargetSite(models.Model):
+    objects = TargetSiteManager()
+
     STATUS_CHOICES = (
         ('Active', 'Active'),
         ('Inactive', 'Inactive'),
