@@ -1,7 +1,7 @@
 """
 Ad-hoc FTP upload smoke test for VDP CSV files.
 
-Uses the same environment variables as ``VdpUrlsMiddleWare`` in ``middlewares.py``;
+Uses the same environment variables as ``VdpUrlFtpExportPipeline`` in ``pipelines.py``;
 do not commit real credentials. Example::
 
     export AIM_FTP_HOST=ftp.example.com
@@ -40,7 +40,7 @@ def main() -> int:
     if not all((host, user, password)):
         print(
             'Missing AIM_FTP_HOST / AIM_FTP_USER / AIM_FTP_PASS '
-            '(see middlewares.VdpUrlsMiddleWare).',
+            '(see pipelines.VdpUrlFtpExportPipeline).',
             file=sys.stderr,
         )
         return 1

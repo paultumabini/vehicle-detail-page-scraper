@@ -20,6 +20,8 @@ DOWNLOADER_MIDDLEWARES = {
 
 ITEM_PIPELINES = {
     'scrapebucket.pipelines.ScrapebucketPipeline': 300,
+    # Post-crawl FTP export; higher number = runs after DB pipeline on close_spider.
+    'scrapebucket.pipelines.VdpUrlFtpExportPipeline': 400,
 }
 
 AUTOTHROTTLE_ENABLED = True
@@ -43,10 +45,10 @@ chrome_path = which('chromedriver')
 SELENIUM_DRIVER_NAME = 'chrome'
 SELENIUM_DRIVER_EXECUTABLE_PATH = '/home/pt/Dev/Projects/django/aim/webscraping/scrapebucket/chromedriver'
 
-# Global spider middlewares: crawl stats → DB, FTP export of VDP CSV (see middlewares).
+# Global spider middleware: crawl stats → SpiderLog (see middlewares).
+# VDP CSV → FTP export lives in ITEM_PIPELINES (VdpUrlFtpExportPipeline).
 SPIDER_MIDDLEWARES = {
     'scrapebucket.middlewares.JobStatLogsMiddleware': 300,
-    'scrapebucket.middlewares.VdpUrlsMiddleWare': 300,
 }
 
 # --- Django bootstrap ---

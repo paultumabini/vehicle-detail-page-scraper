@@ -28,7 +28,7 @@ Django application for managing dealer **vehicle detail page (VDP)** scraping: t
 - **Web dashboard** — KPIs (projects, sites, templates, scraped item counts), YTD template breakdown, recent scrape activity, and scraper elapsed-time trends.
 - **30+ dealer spiders** — WordPress themes (Avada, Astra, Motors), Dealer Inspire, eDealer, Flex Dealer, SM360, Reynolds, Convertus/Trader, JSON APIs, and Selenium/Playwright for JS-heavy sites.
 - **REST API** — Supporting integrations under `project/api/`.
-- **Ops hooks** — Optional FTP export of VDP CSVs (`VdpUrlsMiddleWare`), per-crawl stats logged to `SpiderLog`, and cron-friendly `runspider.py` entrypoint.
+- **Ops hooks** — Optional FTP export of VDP CSVs (`VdpUrlFtpExportPipeline`), per-crawl stats logged to `SpiderLog`, and cron-friendly `runspider.py` entrypoint.
 
 ## Stack
 

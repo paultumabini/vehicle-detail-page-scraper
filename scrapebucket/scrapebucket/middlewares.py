@@ -8,7 +8,6 @@ ScrapebucketDownloaderMiddleware — thin pass-through downloader middleware (bo
 SeleniumStealthMiddleware        — scrapy-selenium with selenium-stealth applied
 UndetectedChromeDriver           — scrapy-selenium wrapper using undetected-chromedriver
 JobStatLogsMiddleware            — persists crawl stats to ``SpiderLog`` on spider close
-VdpUrlsMiddleWare                — exports VIN/VDP CSV to FTP on spider close
 
 Django ORM is bootstrapped via ``ensure_django()`` (idempotent; a no-op when
 ``settings.py`` has already called it).
@@ -16,15 +15,12 @@ Django ORM is bootstrapped via ``ensure_django()`` (idempotent; a no-op when
 
 from __future__ import annotations
 
-import csv
-import io
 import logging
-import os
-from ftplib import FTP, error_perm
 from importlib import import_module
 
 import pytz
 import undetected_chromedriver as uc
+from django.db import close_old_connections
 from scrapy import signals
 from scrapy_selenium.middlewares import SeleniumMiddleware
 from selenium_stealth import stealth
@@ -191,7 +187,7 @@ class UndetectedChromeDriver(SeleniumMiddleware):
 
 
 # ---------------------------------------------------------------------------
-# Post-crawl stat / export middlewares (spider_closed signal handlers)
+# Post-crawl stats (spider_closed signal — see pipelines for FTP export)
 # ---------------------------------------------------------------------------
 
 class JobStatLogsMiddleware:
@@ -213,41 +209,46 @@ class JobStatLogsMiddleware:
         return o
 
     def spider_closed(self, spider, reason):
-        stats = spider.crawler.stats.get_stats()
-        bot_name = spider.crawler.settings.get('BOT_NAME')
-        domain_name = spider.domain_name.split('.')[0]
-
-        target = TargetSite.objects.filter(site_id__exact=domain_name).first()
-        if target is None:
-            logger.warning(
-                'JobStatLogsMiddleware: no TargetSite for site_id=%r; skip SpiderLog',
-                domain_name,
-            )
-            return
-
         try:
-            SpiderLog(
-                target_site_id=target.pk,
-                spider_name=spider.name,
-                allowed_domain=domain_name,
-                items_scraped=stats.get('item_scraped_count'),
-                items_dropped=stats.get('item_dropped_count'),
-                finish_reason=stats.get('finish_reason'),
-                request_count=stats.get('downloader/request_count'),
-                status_count_200=stats.get('downloader/response_status_count/200'),
-                start_timestamp=stats.get('start_time'),
-                end_timestamp=stats.get('finish_time'),
-                elapsed_time=self.dt_interval(stats.get('elapsed_time_seconds')),
-                elapsed_time_seconds=stats.get('elapsed_time_seconds'),
-            ).save()
-            logger.info(
-                'Crawl finished: bot=%s spider=%s target=%s',
-                bot_name,
-                spider.name,
-                domain_name,
-            )
-        except Exception as exc:
-            logger.exception('JobStatLogsMiddleware: failed to save SpiderLog: %s', exc)
+            stats = spider.crawler.stats.get_stats()
+            bot_name = spider.crawler.settings.get('BOT_NAME')
+            domain_name = spider.domain_name.split('.')[0]
+
+            target = TargetSite.objects.filter(site_id__exact=domain_name).first()
+            if target is None:
+                logger.warning(
+                    'JobStatLogsMiddleware: no TargetSite for site_id=%r; skip SpiderLog',
+                    domain_name,
+                )
+                return
+
+            try:
+                SpiderLog(
+                    target_site_id=target.pk,
+                    spider_name=spider.name,
+                    allowed_domain=domain_name,
+                    items_scraped=stats.get('item_scraped_count'),
+                    items_dropped=stats.get('item_dropped_count'),
+                    finish_reason=stats.get('finish_reason'),
+                    request_count=stats.get('downloader/request_count'),
+                    status_count_200=stats.get('downloader/response_status_count/200'),
+                    start_timestamp=stats.get('start_time'),
+                    end_timestamp=stats.get('finish_time'),
+                    elapsed_time=self.dt_interval(stats.get('elapsed_time_seconds')),
+                    elapsed_time_seconds=stats.get('elapsed_time_seconds'),
+                ).save()
+                logger.info(
+                    'Crawl finished: bot=%s spider=%s target=%s',
+                    bot_name,
+                    spider.name,
+                    domain_name,
+                )
+            except Exception as exc:
+                logger.exception(
+                    'JobStatLogsMiddleware: failed to save SpiderLog: %s', exc
+                )
+        finally:
+            close_old_connections()
 
     def convert_dt(self, dt):
         """Convert a naive UTC datetime to a US/Eastern formatted string (unused; kept for reference)."""
@@ -264,68 +265,3 @@ class JobStatLogsMiddleware:
         hours, remainder = divmod(s, 3600)
         minutes, seconds = divmod(remainder, 60)
         return '{:02}:{:02}:{:02}'.format(int(hours), int(minutes), int(seconds))
-
-
-class VdpUrlsMiddleWare:
-    """
-    Export VIN/VDP URL pairs to FTP as ``VDP_URLS_{site_id}.csv`` on spider close.
-
-    Reads ``TargetSite.scrapes`` for the crawled domain, writes a two-column CSV
-    (``VIN``, ``VDP URLS``), and uploads it to the AIM FTP server.
-
-    Required env vars: ``AIM_FTP_HOST``, ``AIM_FTP_USER``, ``AIM_FTP_PASS``.
-    Optional:          ``AIM_FTP_PORT`` (defaults to ``21``).
-    """
-
-    def __init__(self, crawler):
-        self.crawler = crawler
-
-    @classmethod
-    def from_crawler(cls, crawler):
-        o = cls(crawler)
-        crawler.signals.connect(o.spider_closed, signal=signals.spider_closed)
-        return o
-
-    def spider_closed(self, spider, reason):
-        domain_name = spider.domain_name.split('.')[0]
-        self.send_to_ftp(domain_name, spider)
-
-    def send_to_ftp(self, pk, spider):
-        target = TargetSite.objects.filter(site_id=pk).first()
-        if target is None:
-            logger.warning(
-                'VdpUrlsMiddleWare: no TargetSite for site_id=%r; skip FTP export',
-                pk,
-            )
-            return
-
-        host = os.environ.get('AIM_FTP_HOST')
-        user = os.environ.get('AIM_FTP_USER')
-        password = os.environ.get('AIM_FTP_PASS')
-        if not all((host, user, password)):
-            logger.warning('VdpUrlsMiddleWare: AIM_FTP_* env vars not set; skip FTP export')
-            return
-
-        # Build CSV in-memory; encode to bytes for FTP binary transfer.
-        csvfile = io.StringIO()
-        writer = csv.DictWriter(csvfile, fieldnames=['VIN', 'VDP URLS'])
-        writer.writeheader()
-        for item in target.scrapes.values():
-            writer.writerow({'VIN': item.get('vin'), 'VDP URLS': item.get('vehicle_url')})
-
-        payload = io.BytesIO(csvfile.getvalue().encode('utf-8'))
-        remote = f'VDP_URLS_{pk}.csv'
-
-        ftp = FTP()
-        try:
-            ftp.connect(host, int(os.environ.get('AIM_FTP_PORT', '21')))
-            ftp.login(user, password)
-            ftp.storbinary(f'STOR {remote}', payload)
-            logger.info('VdpUrlsMiddleWare: uploaded %s', remote)
-        except (OSError, error_perm) as exc:
-            logger.error('VdpUrlsMiddleWare: FTP upload failed: %s', exc)
-        finally:
-            try:
-                ftp.quit()
-            except Exception:
-                ftp.close()
