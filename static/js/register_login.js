@@ -1,3 +1,5 @@
+// Legacy auth pages (register, password reset via base_legacy_auth.html).
+// /login/ uses Alpine for password toggle — eyes span not present on that page.
 // register
 const inputs = document.querySelectorAll('.input');
 const checkBox = document.querySelector('#show-pass');
@@ -25,11 +27,11 @@ if (checkBox) {
   });
 }
 
-//login
+//login — password visibility toggle (legacy register layout; login uses Alpine)
 if (eyes) {
-  eyes.addEventListener('click', function (e) {
-    console.log('hello');
-    const input = this.previousSibling.previousSibling;
+  eyes.addEventListener('click', function () {
+    const input = this.parentElement.querySelector('input[type="password"], input[type="text"]');
+    if (!input) return;
     if (input.type === 'password') {
       openEye.style.visibility = 'hidden';
       slashEye.style.visibility = 'visible';
@@ -42,13 +44,21 @@ if (eyes) {
   });
 }
 
-$(document).ready(function () {
-  // flash message
-  $('.alert-success, .alert-danger').each(function () {
-    $(this)
-      .fadeTo(5000, 1)
-      .slideUp(100, function () {
-        $(this).remove();
-      });
+// Auto-dismiss flash messages on auth pages (no jQuery)
+document.addEventListener('DOMContentLoaded', function () {
+  document.querySelectorAll('[data-dismiss="alert"]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      btn.closest('.alert')?.remove();
+    });
+  });
+
+  document.querySelectorAll('.alert-success, .alert-danger').forEach(function (alert) {
+    setTimeout(function () {
+      alert.style.transition = 'opacity 0.3s';
+      alert.style.opacity = '0';
+      setTimeout(function () {
+        alert.remove();
+      }, 300);
+    }, 5000);
   });
 });

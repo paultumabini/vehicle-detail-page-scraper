@@ -1,0 +1,178 @@
+{% extends 'project/base.html' %}
+{% load static %}
+{% load tz %}
+{% load custom_filters %}
+
+{% block title %}VDP Scraper | Accounts{% endblock %}
+
+{% block page_heading %}Accounts{% endblock %}
+
+{% block content %}
+
+<!-- ── Page header (mockup panel-header style) ───────────── -->
+<div class="vdp-page-header flex items-start justify-between gap-4">
+  <div>
+    <h4>Accounts</h4>
+    <p class="text-sm text-slate-500 mt-1 mb-0">
+      AV AIM last synced:
+      {% if aim_last_synced_at %}
+      {{ aim_last_synced_at|timezone:display_time_zone|date:'Y-m-d H:i' }}
+      ({{ aim_last_synced_at|timezone_abbrev:display_time_zone }})
+      {% else %}
+      —
+      {% endif %}
+      | New account added: {{ aim_sync_created_count|default:0 }}
+    </p>
+  </div>
+
+  {# Count card: SSR from accounts_view; accounts.js keeps in sync after AJAX fetch #}
+  {# Deep link ?setup=not-configured shows "Need setup" count before JS runs #}
+  <div
+    class="vdp-card py-2 px-4 mb-0 text-center shrink-0"
+    style="min-width: 80px"
+  >
+    <p
+      id="accounts-total-count"
+      class="text-xl font-bold text-brand-600 leading-none mb-0.5"
+    >
+      {{ header_count|default:status_counts.ACTIVE|default:0 }}
+    </p>
+    <p
+      id="accounts-total-label"
+      class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold"
+    >
+      {{ header_label|default:"Active" }}
+    </p>
+  </div>
+</div>
+
+<!-- ── Filter bar ────────────────────────────────────────── -->
+<div class="vdp-card mb-4">
+  <div class="flex flex-wrap gap-4 items-end">
+    <div>
+      <label
+        for="filter-account"
+        class="block text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5"
+      >
+        Account Status
+      </label>
+      {# Default Active — synced with ACCOUNTS_DEFAULT_STATUS in accounts.js #}
+      <select
+        id="filter-account"
+        class="border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-700 bg-white focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 min-w-[140px]"
+      >
+        <option value="">All</option>
+        <option value="ACTIVE" selected>Active</option>
+        <option value="INACTIVE">Inactive</option>
+        <option value="DELETED">Deleted</option>
+      </select>
+    </div>
+
+    <div>
+      <label
+        for="filter-setup"
+        class="block text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5"
+      >
+        Scraping Setup
+      </label>
+      {# initial_setup_filter from ?setup= — paired with accounts.js URL handler #}
+      <select
+        id="filter-setup"
+        class="border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-700 bg-white focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 min-w-[140px]"
+      >
+        <option value="">All</option>
+        <option value="configured"{% if initial_setup_filter == 'configured' %} selected{% endif %}>Configured</option>
+        <option value="not-configured"{% if initial_setup_filter == 'not-configured' %} selected{% endif %}>Not configured</option>
+      </select>
+    </div>
+
+    <div>
+      <label
+        for="filter-new"
+        class="block text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5"
+      >
+        New Accounts
+      </label>
+      <select
+        id="filter-new"
+        class="border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-700 bg-white focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 min-w-[130px]"
+      >
+        <option value="">All</option>
+        <option value="new">New only</option>
+      </select>
+    </div>
+  </div>
+</div>
+
+<!-- ── Accounts table (rows load via server-side AJAX) ─────── -->
+<div class="vdp-card p-0 overflow-hidden accounts-table-card">
+  <div class="vdp-table-panel" id="accounts-panel">
+    <div class="vdp-table-toolbar">
+      <label class="vdp-table-length" for="accounts-length">
+        <select id="accounts-length" aria-label="Rows per page">
+          <option value="10">10</option>
+          <option value="25" selected>25</option>
+          <option value="50">50</option>
+          <option value="100">100</option>
+        </select>
+        <span> per page</span>
+      </label>
+      <label class="vdp-table-search">
+        <input
+          id="accounts-search"
+          type="search"
+          placeholder="Search accounts…"
+          aria-label="Search accounts"
+        />
+      </label>
+    </div>
+
+    <table
+      id="accounts-table"
+      class="w-full vdp-data-table"
+      data-datatable-url="{% url 'accounts-datatable' %}"
+    >
+      <thead>
+        <tr>
+          <th class="text-left">ID</th>
+          <th class="text-left">Account Name</th>
+          <th class="text-left">Location</th>
+          <th class="text-left">Account Status</th>
+          <th class="text-left">Scraping</th>
+          <th class="text-left">New Active</th>
+          <th class="text-left">Used Active</th>
+          <th class="text-left">FB Feed</th>
+          <th class="text-left">Last Synced</th>
+          <th class="text-center">Actions</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <div class="vdp-table-footer">
+      <div id="accounts-info" class="vdp-table-info"></div>
+      <nav id="accounts-paging" class="vdp-table-paging" aria-label="Account pagination"></nav>
+      <div class="vdp-page-jump">
+        <label for="accounts-page-input" class="vdp-page-jump-label">Page</label>
+        <input
+          id="accounts-page-input"
+          type="number"
+          min="1"
+          class="vdp-page-jump-input"
+          aria-label="Go to page"
+        />
+        <button type="button" id="accounts-page-go" class="vdp-page-jump-btn">Go</button>
+      </div>
+    </div>
+
+    <div id="accounts-processing" class="vdp-table-processing hidden">
+      Loading accounts…
+    </div>
+  </div>
+</div>
+
+{% endblock content %}
+
+{% block extra_js %}
+<script src="{% static 'js/accounts.js' %}"></script>
+{% endblock extra_js %}

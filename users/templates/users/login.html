@@ -1,75 +1,126 @@
-{% extends "users/base_user.html" %}
-{% load static%}
-{% load crispy_forms_tags %}
-{% block content %}
-    <div class="login-container "> 
-        <div class="error-msg-box ">           
-            {% if  form.errors %}
-                <div class="alert alert-danger text-center error-msg">
-                 <i class="fa fa-exclamation-circle" ></i> 
-                 <button type="button" class="close" data-dismiss="alert" aria-label="Close">
-                    <span aria-hidden="true">&times;</span>
-                  </button>                   
-                    {% for _, error in form.errors.items %}
-                           <div> {{ error|striptags }}</div>
-                    {% endfor %}  
-              </div>    
-            {% endif %}                        
-         </div>  
+{% extends 'users/base_user.html' %}
 
-      <div class="success-msg-box ">  
-         {% if messages %}
-            {% for message in messages %}
-              <div class="alert alert-{{ message.level_tag }} sign__up {{ message.extra_tags }}">
-                <i class="fa fa-check-circle" ></i> 
-                <button type="button" class="close" data-dismiss="alert" aria-label="Close">
-                    <span aria-hidden="true">&times;</span>
-                </button>                      
-                    {{ message }}                    
-              </div>              
-            {% endfor %}
-          {% endif %}
-        </div>
-           <!-- content block -->
-         
-      <div class="login-content ">
-        <form  method="POST" class="form-group">
-            {% csrf_token %}
-          <img src="{% static 'images/profile_login.png' %}"  class="slide-in-fwd-center"/>
-          <h2 class="title">Log in to Scrape Bucket</h2>
-          <div class="input-div one">
-            <div class="i">
-              <i class="fa fa-user"></i>
-            </div>
-            <div class="div">
-              <h5>{{ form.username.label }}</h5>
-              <input type="text" class="input" name="username" required/>
-            </div>
-          </div>
-          <div class="input-div pass">
-            <div class="i">
-              <i class="fa fa-lock"></i>
-            </div>
-            <div class="div">
-              <h5>{{ form.password.label }}</h5>
-               <input type="password" class="input password-input" name="password" required />
-               <span class= "eyes">
-                 <i class="fa fa-eye"></i>
-                 <i class="fa fa-eye-slash"></i>
-               </span>
-            </div>
-          </div>
-          <a href="{% url 'password_reset' %}" class="password-reset" >Forgot Password?</a>
-          <input type="submit" class="btn" value="Sign In" />  
-          
-          <div class="border-top sign-up">
-            <small class="text-muted">
-              Don't have an account? <a href="{% url 'register' %}" class="">Sign Up</a>
-            </small>
-        </div>
-        </form>        
-      </div>
+{% block title %}VDP Scraper | Log in{% endblock %}
+
+{% block content %}
+<!--
+  /login/ — MyLoginView (users.views.MyLoginView).
+
+  Migrated from Bootstrap + register_login.css to vdp-auth-* (main.css).
+  Extends base_user.html only (not base_legacy_auth) so global register_login form{}
+  rules do not double-style this card.
+
+  Brand mark: _auth_brand_mark.html (sidebar spider + gradient, not profile_login.png).
+  Password: type="password" by default; Alpine x-bind:type toggles visibility.
+  Hidden next field preserves LOGIN_REDIRECT / ?next= after auth.
+-->
+<div class="vdp-auth-page">
+  <div class="vdp-auth-card" x-data="{ showPassword: false }">
+    <div class="vdp-auth-brand">
+      {# Spider gradient brand — users/_auth_brand_mark.html (replaces profile_login.png) #}
+      {% include 'users/_auth_brand_mark.html' %}
+      <h1 class="vdp-auth-title">Log in to VDP Scraper</h1>
+      <p class="vdp-auth-subtitle">Sign in to manage target sites and scrapes.</p>
     </div>
-    
-   {% endblock content %}
-    
+
+    {% if form.non_field_errors %}
+    <div class="vdp-auth-flash vdp-auth-flash--error" role="alert">
+      <i class="fa fa-circle-exclamation" aria-hidden="true"></i>
+      <span>{{ form.non_field_errors|join:', ' }}</span>
+    </div>
+    {% endif %}
+
+    {% if form.errors and not form.non_field_errors %}
+    <div class="vdp-auth-flash vdp-auth-flash--error" role="alert">
+      <i class="fa fa-circle-exclamation" aria-hidden="true"></i>
+      <span>Invalid username or password. Both fields may be case-sensitive.</span>
+    </div>
+    {% endif %}
+
+    {% if messages %}
+    <div
+      x-data
+      x-init="setTimeout(() => $el.remove(), 5000)"
+      class="vdp-auth-flash-messages"
+    >
+      {% for message in messages %}
+      <div
+        class="vdp-auth-flash {% if message.level_tag == 'success' %}vdp-auth-flash--success{% elif message.level_tag == 'warning' %}vdp-auth-flash--warning{% else %}vdp-auth-flash--info{% endif %}"
+        role="status"
+      >
+        <i
+          class="fa fa-{% if message.level_tag == 'success' %}check-circle{% elif message.level_tag == 'warning' %}triangle-exclamation{% else %}circle-info{% endif %}"
+          aria-hidden="true"
+        ></i>
+        <span>{{ message }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <form method="post" class="vdp-auth-form" novalidate>
+      {% csrf_token %}
+      {% if next %}<input type="hidden" name="next" value="{{ next }}" />{% endif %}
+
+      <div class="vdp-auth-field">
+        <label for="id_username" class="vdp-label">Username</label>
+        <div class="vdp-auth-input-wrap">
+          <i class="fa fa-user vdp-auth-input-icon" aria-hidden="true"></i>
+          <input
+            type="text"
+            name="username"
+            id="id_username"
+            class="vdp-auth-input"
+            autocomplete="username"
+            required
+            autofocus
+            {% if form.username.value %}value="{{ form.username.value }}"{% endif %}
+          />
+        </div>
+        {% if form.username.errors %}
+        <p class="vdp-error">{{ form.username.errors|join:', ' }}</p>
+        {% endif %}
+      </div>
+
+      <div class="vdp-auth-field">
+        <label for="id_password" class="vdp-label">Password</label>
+        <div class="vdp-auth-input-wrap">
+          <i class="fa fa-lock vdp-auth-input-icon" aria-hidden="true"></i>
+          <input
+            type="password"
+            x-bind:type="showPassword ? 'text' : 'password'"
+            name="password"
+            id="id_password"
+            class="vdp-auth-input vdp-auth-input--password"
+            autocomplete="current-password"
+            required
+          />
+          <button
+            type="button"
+            class="vdp-auth-password-toggle"
+            @click="showPassword = !showPassword"
+            :aria-label="showPassword ? 'Hide password' : 'Show password'"
+            :title="showPassword ? 'Hide password' : 'Show password'"
+          >
+            <i class="fa" :class="showPassword ? 'fa-eye-slash' : 'fa-eye'" aria-hidden="true"></i>
+          </button>
+        </div>
+        {% if form.password.errors %}
+        <p class="vdp-error">{{ form.password.errors|join:', ' }}</p>
+        {% endif %}
+      </div>
+
+      <div class="vdp-auth-actions">
+        <a href="{% url 'password_reset' %}" class="vdp-auth-link">Forgot password?</a>
+      </div>
+
+      <button type="submit" class="vdp-auth-submit">Sign in</button>
+    </form>
+
+    <p class="vdp-auth-footer">
+      Don&rsquo;t have an account?
+      <a href="{% url 'register' %}" class="vdp-auth-link vdp-auth-link--strong">Sign up</a>
+    </p>
+  </div>
+</div>
+{% endblock content %}

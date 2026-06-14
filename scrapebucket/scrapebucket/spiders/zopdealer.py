@@ -1,97 +1,161 @@
-"""Typesense ``multi_search`` spider (hosted collection + API key on the query string)."""
+"""Zop Dealer (Typesense) inventory: API keys are embedded on each dealer's SRP."""
 
 import json
-import logging
+import re
+from urllib.parse import urljoin, urlparse
 
 import scrapy
+from scrapy.loader import ItemLoader
 
+from ..items import ScrapebucketItem
 from ..spider_helpers.response_json import loads_response_body
 
-logger = logging.getLogger(__name__)
+_PER_PAGE = 50
+_TYPESENSE_FIELD = re.compile(
+    r'"(?P<key>COLLECTION|API_KEY|TYPESENSE_HOST)"\s*:\s*"(?P<value>[^"]+)"'
+)
 
 
 class ZopDealerSpider(scrapy.Spider):
     """
-    Single POST template walks the SRP; ``out_of`` from the first batch mutates ``per_page``.
-
-    NOTE: This mirrors a legacy integration (key in URL). Prefer env-driven endpoints/keys
-    if you externalize configuration.
+    Zop dealers expose Typesense ``COLLECTION``, ``API_KEY``, and ``TYPESENSE_HOST``
+    in ``globalZDProperties()`` on ``/inventory/``. VDP paths are in ``page_url``.
     """
 
     name = 'zopdealer'
-    page = 1
-    per_page = 24
+    domain_name = ''
 
     custom_settings = {
-        'DOWNLOADER_MIDDLEWARES': {'scrapebucket.middlewares.ScrapebucketDownloaderMiddleware': 543},
-        'SPIDER_MIDDLEWARES': {'scrapebucket.middlewares.ScrapebucketSpiderMiddleware': 543},
-    }
-
-    query = {
-        "searches": [
-            {
-                "query_by": "make,model,year_search,trim,vin,stock_no,exterior_color",
-                "num_typos": 0,
-                "sort_by": "status_rank:asc,created_at:desc",
-                "highlight_full_fields": "make,model,year_search,trim,vin,stock_no,exterior_color",
-                "collection": "fa3feaedad1ba3fc26135c6f8b28d80d",
-                "q": "*",
-                "facet_by": "make,model,selling_price,year",
-                "filter_by": "",
-                "max_facet_values": 50,
-                "page": "1",
-                "per_page": "24",
-            }
-        ]
+        'DOWNLOADER_MIDDLEWARES': {
+            'scrapebucket.middlewares.ScrapebucketDownloaderMiddleware': 543,
+        },
     }
 
     def start_requests(self):
-        self.url = 'https://v6eba1srpfohj89dp-1.a1.typesense.net/multi_search?x-typesense-api-key=cWxPZGNaVWpsUTlzN2szWmExNTJxZWNiWUM5MnRqa2xkRjdZcWZuclZMbz1oZmUweyJmaWx0ZXJfYnkiOiJzdGF0dXM6W0luc3RvY2ssIFNvbGRdICYmIHZpc2liaWxpdHk6PjAgJiYgcHJpY2U6PjAgJiYgZGVsZXRlZF9hdDo9MCJ9'
-
+        self.domain_name = '.'.join(urlparse(self.url).netloc.split('.')[-2:])
         yield scrapy.Request(
-            url=f'{self.url}',
-            method='POST',
-            headers={
-                'Content-Type': 'application/json',
-            },
-            body=json.dumps(self.query),
-            callback=self.parse,
+            url=urljoin(self.url, '/inventory/'),
+            callback=self.parse_config,
+            dont_filter=True,
         )
 
-    def parse(self, response):
-        res_dict = loads_response_body(
-            response.body, url=response.url, label=self.name
-        )
-        if not res_dict:
+    def parse_config(self, response):
+        config = {}
+        for match in _TYPESENSE_FIELD.finditer(response.text):
+            config[match.group('key')] = match.group('value')
+
+        missing = [key for key in ('COLLECTION', 'API_KEY', 'TYPESENSE_HOST') if not config.get(key)]
+        if missing:
+            self.logger.warning(
+                'zopdealer: missing Typesense fields %s on %s',
+                missing,
+                response.url,
+            )
             return
 
-        results = res_dict.get('results') or []
+        api_url = (
+            f"https://{config['TYPESENSE_HOST']}/multi_search"
+            f"?x-typesense-api-key={config['API_KEY']}"
+        )
+        yield scrapy.Request(
+            url=api_url,
+            method='POST',
+            headers={'Content-Type': 'application/json'},
+            body=json.dumps(self._search_body(config['COLLECTION'], page=1, per_page=1)),
+            callback=self.parse_probe,
+            meta={
+                'api_url': api_url,
+                'collection': config['COLLECTION'],
+                'base_url': response.urljoin('/'),
+            },
+        )
+
+    def parse_probe(self, response):
+        payload = loads_response_body(response.body, url=response.url, label=self.name)
+        if not payload:
+            return
+
+        results = payload.get('results') or []
         if not results:
-            logger.warning('zopdealer: no results in response')
+            return
+
+        out_of = results[0].get('out_of') or 0
+        if not out_of:
+            self.logger.warning('zopdealer: empty inventory for %s', self.url)
+            return
+
+        # Typesense returns at most ~250 hits per request; Zop SRP uses one bulk fetch.
+        per_page = min(out_of, 250)
+        yield from self._search_request(
+            api_url=response.meta['api_url'],
+            collection=response.meta['collection'],
+            page=1,
+            per_page=per_page,
+            base_url=response.meta['base_url'],
+        )
+
+    def _search_body(self, collection, page, per_page=_PER_PAGE):
+        return {
+            'searches': [
+                {
+                    'collection': collection,
+                    'q': '*',
+                    'query_by': 'make,model,year_search,trim,vin,stock_no,exterior_color',
+                    'num_typos': 0,
+                    'sort_by': 'status_rank:asc,created_at:desc',
+                    'filter_by': '',
+                    'page': str(page),
+                    'per_page': str(per_page),
+                }
+            ]
+        }
+
+    def _search_request(self, api_url, collection, page, per_page, base_url):
+        yield scrapy.Request(
+            url=api_url,
+            method='POST',
+            headers={'Content-Type': 'application/json'},
+            body=json.dumps(self._search_body(collection, page, per_page)),
+            callback=self.parse_inventory,
+            meta={
+                'api_url': api_url,
+                'collection': collection,
+                'page': page,
+                'per_page': per_page,
+                'base_url': base_url,
+            },
+        )
+
+    def parse_inventory(self, response):
+        payload = loads_response_body(response.body, url=response.url, label=self.name)
+        if not payload:
+            return
+
+        results = payload.get('results') or []
+        if not results:
+            self.logger.warning('zopdealer: no results in response')
             return
 
         batch = results[0]
-        out_of = batch.get('out_of')
-        if out_of is not None:
-            self.per_page = out_of
-            self.query.get('searches')[0].update({'per_page': self.per_page})
+        hits = batch.get('hits') or []
+        base_url = response.meta['base_url']
 
-        yield scrapy.Request(
-            url=f'{self.url}',
-            method='POST',
-            headers={
-                'Content-Type': 'application/json',
-            },
-            body=json.dumps(self.query),
-            callback=self.parse,
-        )
+        for hit in hits:
+            doc = hit.get('document') or {}
+            vin = (doc.get('vin') or '').strip()
+            page_url = (doc.get('page_url') or '').strip()
+            if not page_url or not vin or vin.upper() == 'UNKNOWN':
+                continue
 
-        units = batch.get('hits') or []
-        for i, unit in enumerate(units):
-            doc = unit.get('document') or {}
-            logger.debug(
-                'zopdealer item %s stock=%s vin=%s',
-                i + 1,
-                doc.get('stock_no'),
-                doc.get('vin'),
-            )
+            loader = ItemLoader(item=ScrapebucketItem())
+            loader.add_value('year', doc.get('year'))
+            loader.add_value('make', doc.get('make'))
+            loader.add_value('model', doc.get('model'))
+            loader.add_value('trim', doc.get('trim'))
+            loader.add_value('stock_number', doc.get('stock_no'))
+            loader.add_value('vin', vin)
+            loader.add_value('vehicle_url', urljoin(base_url, page_url.lstrip('/')))
+            loader.add_value('price', doc.get('selling_price') or doc.get('special_price'))
+            loader.add_value('category', doc.get('vehicle_type') or doc.get('status'))
+            loader.add_value('domain', self.domain_name)
+            yield loader.load_item()

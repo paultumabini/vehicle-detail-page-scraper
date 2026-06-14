@@ -1,84 +1,177 @@
-{% extends 'project/base.html'%}
+{% extends 'project/base.html' %}
 {% load static %}
-{% load crispy_forms_tags %}
-{% load crispy_forms_field %}
-{% load crispy_forms_tags %}
-{% load crispy_forms_utils %}
-{% load custom_filters %}
 {% load tz %}
-{% block title %}  Scrape Bucket - Dashboard{% endblock %} 
-{% block content %}
 
-    <!-- Section 1 -->
-    <section class="section-one">
-        <div class="card">
-          <div class="card-icon">
-            <i class="fa fa-clipboard"></i>
-          </div>
-          <div>
-            <h2 class="value" data-target="{{ project.count}}">0</h2>
-           <p> Project</p>
-          </div> 
-        </div>
-        <div class="card">
-          <div class="card-icon">
-            <i class="fa fa-link"></i>
-          </div>
-          <div>
-            <h2 class="value" data-target="{{provider | get_field_values:'site_name'| length }}">0</h2>
-            <p> Sites </p>
-          </div>
-        </div>
-        <div class="card ">
-          <div class="card-icon">
-            <i class="fa fa-tasks"></i>
-          </div>
-            <div>
-            <h2 class="value percent" data-target="{{provider | get_field_values:'web_provider'| length }}">0</h2>
-            <p> Templates</p>
-          </div>
-        </div>
-        <div class="card">
-          <div class="card-icon">
-            <i class="fa fa-database"></i>
-          </div>
-            <div>
-            <h2 class="value percent" data-target="{{total_scrapes | default_if_none:'0'}}">0</h2>
-            <p> Scraped</p>
-          </div>
-        </div>
-    </section>
-      <!-- Section 2 -->
-       <section class="section-two">
-          <div class="card card-chart chart-wrapper">
-           <!--  Chart A  -->
-           <div class="chart-A"> 
-              <canvas id="chartA__canvas" width="400" height="350"></canvas>
-            </div>        
-          </div>    
-          <div class="card card-chart chart-wrapper">
-            <!-- Chart B-C-->
-            <div class="chart-B-C"> 
-                <div class="chart-B"> 
-                    <canvas id="chartB__canvas" width="400" height="225"></canvas>
-                </div>
-                <div class="chart-C"> 
-                    <canvas id="chartC__canvas" width="400" height="125"></canvas>
-                </div>
-            </div>
-          </div>
-       </section>
-       
-        <!-- flash Messages -->
-        {% if messages %}
-        {% for message in messages %}
-            <div class="alert alert-{{ message.level_tag }} {{ message.extra_tags }}">
-                {{ message }}
-                </div>              
-        {% endfor %}
-        {% endif %}
-{% endblock content%}
-{% block js %}  
-    getSpiderLogs();
+{% block extra_head %}
+  {# Chart.js 4 — dashboard only; upgraded from 3.7 for v4 scale API + styling defaults #}
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 {% endblock %}
 
+{% block extra_js %}
+  {# SSR setup stats — read by chart.js readSetupData(); avoids a second fetch on load #}
+  {{ dashboard|json_script:"dashboard-setup-data" }}
+  <script defer src="{% static 'js/chart.js' %}"></script>
+{% endblock %}
+
+{% block title %}VDP Scraper | Dashboard{% endblock %}
+{% block page_heading %}Dashboard{% endblock %}
+
+{% block content %}
+
+  {# ── KPI stat cards (6-up on xl) ──────────────────────────────── #}
+  {# .value + data-target — animated by initDashboardCounter() in main.js #}
+  <div class="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-5">
+
+    <div class="vdp-card mb-0 flex items-center gap-4">
+      <div class="w-11 h-11 rounded-[10px] bg-brand-100 grid place-items-center shrink-0">
+        <i class="fa fa-clipboard text-brand-600 text-sm"></i>
+      </div>
+      <div class="min-w-0">
+        <h2 class="value text-2xl font-bold text-slate-800 leading-none mb-1"
+            data-target="{{ project.count }}">0</h2>
+        <p class="text-[11px] text-slate-500 font-semibold uppercase tracking-wider m-0">Projects</p>
+      </div>
+    </div>
+
+    {# Scrape Sites — TargetSite.status='Active' only (see _dashboard_stats) #}
+    <div class="vdp-card mb-0 flex items-center gap-4">
+      <div class="w-11 h-11 rounded-[10px] bg-emerald-100 grid place-items-center shrink-0">
+        <i class="fa fa-bullseye text-emerald-600 text-sm"></i>
+      </div>
+      <div class="min-w-0">
+        <h2 class="value text-2xl font-bold text-slate-800 leading-none mb-1"
+            data-target="{{ dashboard.active_site_count }}">0</h2>
+        <p class="text-[11px] text-slate-500 font-semibold uppercase tracking-wider m-0">Scrape Sites</p>
+      </div>
+    </div>
+
+    <div class="vdp-card mb-0 flex items-center gap-4">
+      <div class="w-11 h-11 rounded-[10px] bg-sky-100 grid place-items-center shrink-0">
+        <i class="fa fa-building text-sky-600 text-sm"></i>
+      </div>
+      <div class="min-w-0">
+        <h2 class="value text-2xl font-bold text-slate-800 leading-none mb-1"
+            data-target="{{ dashboard.active_account_count }}">0</h2>
+        <p class="text-[11px] text-slate-500 font-semibold uppercase tracking-wider m-0">Active Accounts</p>
+      </div>
+    </div>
+
+    <div class="vdp-card mb-0 flex items-center gap-4">
+      <div class="w-11 h-11 rounded-[10px] bg-teal-100 grid place-items-center shrink-0">
+        <i class="fa fa-circle-check text-teal-600 text-sm"></i>
+      </div>
+      <div class="min-w-0">
+        <h2 class="value text-2xl font-bold text-slate-800 leading-none mb-1"
+            data-target="{{ dashboard.configured_count }}">0</h2>
+        <p class="text-[11px] text-slate-500 font-semibold uppercase tracking-wider m-0">Configured</p>
+      </div>
+    </div>
+
+    {# Deep link: /accounts/?setup=not-configured → Active + Not configured filter #}
+    <a href="{% url 'accounts' %}?setup=not-configured"
+       class="vdp-card mb-0 flex items-center gap-4 no-underline transition-shadow hover:shadow-md"
+       title="View accounts without scrape setup">
+      <div class="w-11 h-11 rounded-[10px] bg-amber-100 grid place-items-center shrink-0">
+        <i class="fa fa-wrench text-amber-600 text-sm"></i>
+      </div>
+      <div class="min-w-0">
+        <h2 class="value text-2xl font-bold text-amber-700 leading-none mb-1"
+            data-target="{{ dashboard.need_setup_count }}">0</h2>
+        <p class="text-[11px] text-slate-500 font-semibold uppercase tracking-wider m-0">Need Setup</p>
+      </div>
+    </a>
+
+    <div class="vdp-card mb-0 flex items-center gap-4">
+      <div class="w-11 h-11 rounded-[10px] bg-red-100 grid place-items-center shrink-0">
+        <i class="fa fa-database text-red-500 text-sm"></i>
+      </div>
+      <div class="min-w-0">
+        <h2 class="value text-2xl font-bold text-slate-800 leading-none mb-1"
+            data-target="{{ total_scrapes|default_if_none:'0' }}">0</h2>
+        <p class="text-[11px] text-slate-500 font-semibold uppercase tracking-wider m-0">Scraped</p>
+      </div>
+    </div>
+
+  </div>
+
+  {# ── Setup coverage charts (SSR data from _dashboard_stats) ───── #}
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+
+    <div class="vdp-card mb-0 vdp-chart-card">
+      <div class="vdp-chart-card__header">
+        <div>
+          <h3 class="vdp-chart-card__title">Account setup coverage</h3>
+          <p class="vdp-chart-card__subtitle">Active accounts with vs without a scrape target</p>
+        </div>
+      </div>
+      <div class="vdp-chart-card__body vdp-chart-card__body--donut">
+        <canvas id="chartSetup__canvas" aria-label="Account setup coverage chart"></canvas>
+      </div>
+    </div>
+
+    <div class="vdp-card mb-0 vdp-chart-card">
+      <div class="vdp-chart-card__header">
+        <div>
+          <h3 class="vdp-chart-card__title">Accounts vs scrape sites</h3>
+          <p class="vdp-chart-card__subtitle">Compare registry size to runnable scrape targets</p>
+        </div>
+      </div>
+      <div class="vdp-chart-card__body">
+        <canvas id="chartCompare__canvas" aria-label="Accounts versus scrape sites chart"></canvas>
+      </div>
+    </div>
+
+  </div>
+
+  {# Site status (SSR) + YTD template volume (AJAX via /spider-log-json/) #}
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+
+    <div class="vdp-card mb-0 vdp-chart-card">
+      <div class="vdp-chart-card__header">
+        <div>
+          <h3 class="vdp-chart-card__title">Target site status</h3>
+          <p class="vdp-chart-card__subtitle">All scrape configs by operational status</p>
+        </div>
+      </div>
+      <div class="vdp-chart-card__body">
+        <canvas id="chartStatus__canvas" aria-label="Target site status breakdown chart"></canvas>
+      </div>
+    </div>
+
+    <div class="vdp-card mb-0 vdp-chart-card">
+      <div class="vdp-chart-card__header">
+        <div>
+          <h3 class="vdp-chart-card__title">Scraped items by template</h3>
+          <p class="vdp-chart-card__subtitle">Year to date volume per spider template</p>
+        </div>
+      </div>
+      <div class="vdp-chart-card__body vdp-chart-card__body--tall">
+        <div class="chart-A h-full min-h-[320px]">
+          {# .chart-A — getSpiderLogs() injects spinner here until AJAX completes #}
+          <canvas id="chartA__canvas" aria-label="Year to date scraped items by template"></canvas>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  {# ── Activity charts ─────────────────────────────────────────── #}
+  <div class="vdp-card mb-0 vdp-chart-card">
+    <div class="vdp-chart-card__header">
+      <div>
+        <h3 class="vdp-chart-card__title">Recent scrape activity</h3>
+        <p class="vdp-chart-card__subtitle">Last 15 days — item volume and elapsed crawl time</p>
+      </div>
+    </div>
+    {# .chart-B-C — getSpiderLogs() injects spinner; chart B + C share this container #}
+    <div class="chart-B-C flex flex-col gap-6">
+      <div class="chart-B vdp-chart-card__body vdp-chart-card__body--compact">
+        <canvas id="chartB__canvas" aria-label="Last 15 day scrape volume"></canvas>
+      </div>
+      <div class="chart-C vdp-chart-card__body vdp-chart-card__body--compact">
+        <canvas id="chartC__canvas" aria-label="Last 15 day scrape elapsed time"></canvas>
+      </div>
+    </div>
+  </div>
+
+{% endblock content %}

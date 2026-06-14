@@ -1,0 +1,79 @@
+{% load tz %}
+{% load custom_filters %}
+{# One Target Sites table row — main.css only (matches Accounts row pattern). #}
+<tr>
+  <td class="vdp-nowrap vdp-stat-cell">
+    <a class="vdp-table-link" href="{% url 'site-detail' site.project site.pk %}">{{ site.entry_code }}</a>
+  </td>
+
+  <td>
+    <a class="vdp-table-link vdp-cell-name" href="{% url 'site-detail' site.project site.pk %}">
+      {{ site.site_name.account_name|default:"—" }}
+    </a>
+  </td>
+
+  <td class="vdp-url-cell">
+    <a class="vdp-table-link vdp-cell-url" href="{{ site.site_url }}" target="_blank" rel="noopener noreferrer">
+      {{ site.site_url|default:"—" }}
+    </a>
+  </td>
+
+  <td>
+    <span class="vdp-cell-sub">{{ site.web_provider|default:"—" }}</span>
+  </td>
+
+  {# Hidden exact status for client filter — avoids "Active" matching "Inactive". #}
+  <td>
+    <span class="dt-val vdp-sr-only">{{ site.status }}</span>
+    <span class="status-badge status-{{ site.status|lower }}">
+      {{ site.get_status_display }}
+    </span>
+  </td>
+
+  <td class="vdp-nowrap">
+    <span class="vdp-cell-date">{{ site|target_site_last_run }}</span>
+  </td>
+
+  <td>
+    {% if site.author %}
+    <span class="vdp-owner-cell" title="Created by {{ site.author }}">
+      <img
+        class="vdp-author-avatar"
+        src="{{ site.author.profile.image.url }}"
+        alt="{{ site.author.username }}"
+      />
+      <span class="vdp-cell-sub">{{ site.author|title }}</span>
+    </span>
+    {% else %}
+    <span class="vdp-cell-muted">—</span>
+    {% endif %}
+  </td>
+
+  <td class="vdp-nowrap">
+    <span class="vdp-cell-date">{{ site.date_created|timezone:'US/Eastern'|date:'Y-m-d' }}</span>
+  </td>
+
+  <td class="vdp-table-actions-cell">
+    <div class="vdp-table-actions">
+      <a
+        href="{% url 'scrape-csv' site.project.name %}?target_id={{ site.pk }}"
+        class="vdp-table-action vdp-table-action--download"
+        title="Download CSV"
+        aria-label="Download CSV for {{ site.entry_code }}"
+      >
+        <i class="fa fa-file-csv" aria-hidden="true"></i>
+      </a>
+      <button
+        type="button"
+        class="vdp-table-action vdp-table-action--delete openDeleteModal"
+        data-site-id="{{ site.site_id }}"
+        data-site-name="{{ site }}"
+        data-entry-code="{{ site.entry_code }}"
+        title="Delete target site"
+        aria-label="Delete {{ site.entry_code }}"
+      >
+        <i class="fa fa-trash" aria-hidden="true"></i>
+      </button>
+    </div>
+  </td>
+</tr>

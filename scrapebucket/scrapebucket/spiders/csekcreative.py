@@ -15,7 +15,9 @@ class CsekcreativeSpider(CrawlSpider):
     domain_name = ''
 
     custom_settings = {
-        'DOWNLOADER_MIDDLEWARES': {'scrapebucket.middlewares.ScrapebucketDownloaderMiddleware': 543},
+        'DOWNLOADER_MIDDLEWARES': {
+            'scrapebucket.middlewares.ScrapebucketDownloaderMiddleware': 543
+        },
     }
 
     def start_requests(self):

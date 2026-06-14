@@ -66,9 +66,8 @@ INSTALLED_APPS = [
     'project.apps.ProjectConfig',
     'users',
     'project.api',
-    'jazzmin',
-    'crispy_forms',
-    'crispy_bootstrap4',
+    'unfold',  # must be before django.contrib.admin
+    'unfold.contrib.filters',  # optional: enhanced filter widgets
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -106,6 +105,8 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                # Target Sites project list for base.html sidebar (see set_sidebar_nav in views).
+                'project.context_processors.sidebar',
             ],
         },
     },
@@ -121,10 +122,10 @@ WSGI_APPLICATION = 'webscraping.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.environ.get('POSTGRES_DB', os.environ.get('DB_NAME', 'webscraping')),
+        'NAME': os.environ.get('POSTGRES_DB', os.environ.get('DB_NAME', 'avaim')),
         'USER': os.environ.get('POSTGRES_USER', os.environ.get('DB_USER', 'admin')),
         'PASSWORD': os.environ.get(
-            'POSTGRES_PASSWORD', os.environ.get('DB_PASSWORD', 'admin')
+            'POSTGRES_PASSWORD', os.environ.get('DB_PASS', 'admin')
         ),
         'HOST': os.environ.get('POSTGRES_HOST', os.environ.get('DB_HOST', '127.0.0.1')),
         'PORT': os.environ.get('POSTGRES_PORT', os.environ.get('DB_PORT', '5432')),
@@ -139,24 +140,17 @@ DATABASES = {
 AUTH_PASSWORD_VALIDATORS = [
     {
         'NAME': (
-            'django.contrib.auth.password_validation.'
-            'UserAttributeSimilarityValidator'
+            'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'
         ),
     },
     {
-        'NAME': (
-            'django.contrib.auth.password_validation.MinimumLengthValidator'
-        ),
+        'NAME': ('django.contrib.auth.password_validation.MinimumLengthValidator'),
     },
     {
-        'NAME': (
-            'django.contrib.auth.password_validation.CommonPasswordValidator'
-        ),
+        'NAME': ('django.contrib.auth.password_validation.CommonPasswordValidator'),
     },
     {
-        'NAME': (
-            'django.contrib.auth.password_validation.NumericPasswordValidator'
-        ),
+        'NAME': ('django.contrib.auth.password_validation.NumericPasswordValidator'),
     },
 ]
 
@@ -204,6 +198,8 @@ REST_FRAMEWORK = {
 
 LANGUAGE_CODE = 'en-us'
 TIME_ZONE = 'UTC'
+# User-facing datetimes — keep in sync with CRON_TZ in crontab.prod.
+DISPLAY_TIME_ZONE = 'America/New_York'
 USE_I18N = True
 # True is recommended for new deployments; project historically used False to
 # avoid naive-datetime warnings—migrate carefully if you flip this.
@@ -222,42 +218,105 @@ MEDIA_ROOT = BASE_DIR / 'static' / 'images'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-CRISPY_TEMPLATE_PACK = 'bootstrap4'
-
 
 # -----------------------------------------------------------------------------
-# Jazzmin (admin UI)
+# Unfold admin UI
+# Docs: https://github.com/unfoldadmin/django-unfold
 # -----------------------------------------------------------------------------
 
+from django.templatetags.static import static
+from django.urls import reverse_lazy
 
-def jazzmin_user_avatar(user):
-    """Sidebar avatar from users.Profile.image (related name: profile)."""
-    from django.templatetags.static import static
-
-    try:
-        return user.profile.image.url
-    except Exception:
-        return static('vendor/adminlte/img/user2-160x160.jpg')
-
-
-JAZZMIN_SETTINGS = {
-    'site_logo': 'images/sb_sm.png',
-    'show_ui_builder': False,
-    'copyright': 'Scrape Bucket',
-    'user_avatar': jazzmin_user_avatar,
-    'changeform_format': 'horizontal_tabs',
-    'custom_css': 'css/admin-extra.css',
-    'custom_js': 'js/admin-extra.js',
-}
-
-JAZZMIN_UI_TWEAKS = {
-    'theme': 'flatly',
-    'hide_admin_paginator': True,
-    'navbar': 'navbar-white navbar-light',
-    'sidebar': 'sidebar-dark-primary',
-    'accent': 'accent-primary',
-    'actions_sticky_top': True,
-    'footer_fixed': False,
+UNFOLD = {
+    'SITE_TITLE': 'VDP Scraper',
+    'SITE_HEADER': 'VDP Scraper',
+    # Same gradient spider as the public sidebar brand (static/images/app-icon-*).
+    'SITE_ICON': lambda request: static('images/app-icon-32.png'),
+    'SITE_FAVICONS': [
+        {
+            'rel': 'icon',
+            'sizes': '32x32',
+            'type': 'image/png',
+            'href': lambda request: static('images/favicon-32.png'),
+        },
+        {
+            'rel': 'icon',
+            'sizes': '16x16',
+            'type': 'image/png',
+            'href': lambda request: static('images/favicon-16.png'),
+        },
+        {
+            'rel': 'apple-touch-icon',
+            'sizes': '180x180',
+            'type': 'image/png',
+            'href': lambda request: static('images/apple-touch-icon.png'),
+        },
+    ],
+    'SHOW_HISTORY': True,
+    'SHOW_VIEW_ON_SITE': True,
+    # Custom CSS and JS injected into every admin page
+    'STYLES': [
+        lambda request: static('css/admin-extra.css'),
+    ],
+    'SCRIPTS': [
+        lambda request: static('js/admin-extra.js'),
+    ],
+    'SIDEBAR': {
+        'show_search': True,
+        'show_all_applications': True,
+        'navigation': [
+            {
+                'title': 'Accounts & Sites',
+                'items': [
+                    {
+                        'title': 'Accounts',
+                        'icon': 'store',
+                        'link': reverse_lazy('admin:project_account_changelist'),
+                    },
+                    {
+                        'title': 'Projects',
+                        'icon': 'folder',
+                        'link': reverse_lazy('admin:project_project_changelist'),
+                    },
+                    {
+                        'title': 'Target Sites',
+                        'icon': 'language',
+                        'link': reverse_lazy('admin:project_targetsite_changelist'),
+                    },
+                    {
+                        'title': 'Web Providers',
+                        'icon': 'hub',
+                        'link': reverse_lazy('admin:project_webprovider_changelist'),
+                    },
+                ],
+            },
+            {
+                'title': 'Scraping',
+                'items': [
+                    {
+                        'title': 'Scrapes',
+                        'icon': 'travel_explore',
+                        'link': reverse_lazy('admin:project_scrape_changelist'),
+                    },
+                    {
+                        'title': 'Spider Logs',
+                        'icon': 'list_alt',
+                        'link': reverse_lazy('admin:project_spiderlog_changelist'),
+                    },
+                ],
+            },
+            {
+                'title': 'Users',
+                'items': [
+                    {
+                        'title': 'Users',
+                        'icon': 'person',
+                        'link': reverse_lazy('admin:auth_user_changelist'),
+                    },
+                ],
+            },
+        ],
+    },
 }
 
 

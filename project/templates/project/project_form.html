@@ -1,0 +1,82 @@
+{% extends 'project/base.html' %}
+
+{% block title %}VDP Scraper | Add Project{% endblock %}
+{% block page_heading %}Add Project{% endblock %}
+
+{% block content %}
+<div class="vdp-page-header">
+  <h4>Add Project</h4>
+  <p>Create a new Target Sites bucket — appears in the sidebar with your chosen color.</p>
+</div>
+
+<div class="vdp-card max-w-lg">
+  <form method="post" novalidate class="space-y-4">
+    {% csrf_token %}
+
+    {% if form.non_field_errors %}
+    <div class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+      {{ form.non_field_errors }}
+    </div>
+    {% endif %}
+
+    <div>
+      <label for="{{ form.name.id_for_label }}" class="vdp-label">{{ form.name.label }}</label>
+      {{ form.name }}
+      {% if form.name.help_text %}
+      <p class="vdp-help">{{ form.name.help_text }}</p>
+      {% endif %}
+      {% if form.name.errors %}
+      <p class="vdp-error">{{ form.name.errors|join:', ' }}</p>
+      {% endif %}
+    </div>
+
+    <div>
+      <span id="color-picker-label" class="vdp-label">{{ form.color.label }}</span>
+      <div
+        class="vdp-color-picker"
+        role="radiogroup"
+        aria-labelledby="color-picker-label"
+      >
+        {% for option in form.color %}
+        <label
+          class="vdp-color-swatch vdp-color-swatch--{{ option.data.value }}"
+          title="{{ option.choice_label }}"
+        >
+          {{ option.tag }}
+          <span class="vdp-color-swatch__circle" aria-hidden="true"></span>
+          <span class="sr-only">{{ option.choice_label }}</span>
+        </label>
+        {% endfor %}
+      </div>
+      {% if form.color.errors %}
+      <p class="vdp-error">{{ form.color.errors|join:', ' }}</p>
+      {% endif %}
+    </div>
+
+    <div>
+      <label for="{{ form.sort_order.id_for_label }}" class="vdp-label">{{ form.sort_order.label }}</label>
+      {{ form.sort_order }}
+      {% if form.sort_order.help_text %}
+      <p class="vdp-help">{{ form.sort_order.help_text }}</p>
+      {% endif %}
+      {% if form.sort_order.errors %}
+      <p class="vdp-error">{{ form.sort_order.errors|join:', ' }}</p>
+      {% endif %}
+    </div>
+
+    <div class="flex items-center gap-3 pt-2">
+      <button
+        type="submit"
+        class="inline-flex items-center gap-1.5 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold rounded-lg shadow-sm transition-colors"
+      >
+        <i class="fa fa-plus text-xs"></i>
+        Create project
+      </button>
+      <a
+        href="{% url 'site-list' default_project_slug %}"
+        class="text-sm text-slate-500 hover:text-slate-800 no-underline"
+      >Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

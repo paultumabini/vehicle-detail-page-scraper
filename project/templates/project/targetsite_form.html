@@ -1,122 +1,278 @@
-{% extends 'project/base.html'%}
+{% extends 'project/base.html' %}
 {% load static %}
-{% load crispy_forms_tags %}
-{% load crispy_forms_field %}
-{% load crispy_forms_tags %}
-{% load crispy_forms_utils %}
 {% load custom_filters %}
 
+{#
+  New Scrape + Update Scrape form (SiteCreateView / SiteUpdateView).
 
-{% block title %}  Scrape Bucket - {{ request.resolver_match.url_name | title}}{% endblock %}  <!--same as "object.site_name" -->
-{% block content %} 
-<section class="dealer-details">   
-    <div class="target-sites-scrape-new pt-3 pb-3">
-        <h3 align="left" class="ml-3 pt-3"> {{ request.resolver_match.url_name | str_split:'-' | str_join:' ' | title }}</h3>  
-        <form method="POST" enctype="multipart/form-data" novalidate>     
-            {% csrf_token %}  
-                <fieldset class="form-group mr-4 ml-4" >
-                    <legend class=" profile-info"> Information </legend>  
-                        <div class="new-scrape-content"> 
-                            <div class="new-scrape-inputs col-6"> 
-                                <div class="form-input-div">
-                                    {{ form.site_name|as_crispy_field }}
-                                </div>
-                                <div class="form-input-div">
-                                    {{ form.site_url|as_crispy_field }}  
-                                </div>
-                                <div class="form-input-div">
-                                    {{ form.web_provider|as_crispy_field }}  
-                                </div>
-                                <div class="form-input-div">
-                                    {{ form.project|as_crispy_field }}
-                                </div>                                                                 
-                                <div class="form-row">
-                                    <div class="form-group col-md-6">
-                                      <label for="id_site_id">{{form.site_id.label}} <i data-html="true" class="fa fa-question-circle fa-1x red-tooltip" data-placement="top" data-toggle="tooltip" data-original-title="Example: <br> url: <i>https://www.google.com</i> <br> domain_name: <i>google</i>  "></i></label>
-                                      {{form.site_id}}
-                                      {% if form.errors %}
-                                      <strong> {{ form.errors.site_id }}</strong>
-                                      {% endif %} 
-                                    </div>
-                                    <div class="form-group col-md-6">
-                                      {{form.feed_id.label_tag}}
-                                      {{form.feed_id}}
-                                    </div>
-                                </div>
-                                <div class="form-input-div">
-                                    {{ form.status|as_crispy_field }} 
-                                </div>                       
-                            </div>    
-                                <div class="ml-3">                                                            
-                                    <div class="new-scrape-legend">
-                                        Items to download:
-                                    </div>     
-                                    <div class="new-scrape-checkboxes">  
-                                        <div> 
-                                            {{ form.condition|as_crispy_field }}
-                                            {{ form.unit|as_crispy_field }}
-                                            {{ form.year|as_crispy_field }}
-                                            {{ form.make|as_crispy_field }}
-                                            {{ form.model|as_crispy_field }}
-                                            {{ form.trim|as_crispy_field }}
-                                            {{ form.stock_number|as_crispy_field }}   
-                                        </div>
-                                        <div> 
-                                            {{ form.vin|as_crispy_field }}
-                                            {{ form.vehicle_url|as_crispy_field }}
-                                            {{ form.msrp|as_crispy_field }}
-                                            {{ form.price|as_crispy_field }}
-                                            {{ form.selling_price|as_crispy_field }}
-                                            {{ form.rebate|as_crispy_field }}
-                                            {{ form.discount|as_crispy_field }}
-                                            
-                                        </div>
-                                        <div>                                        
-                                            {{ form.images|as_crispy_field }}
-                                            {{ form.images_count|as_crispy_field }}
-                                        </div>                                                                                           
-                                    </div>  
-                                <div class="check-uncheck__all">                                   
-                                    <i class="fa fa-check-square-o check__all" aria-hidden="true" data-placement="top" data-toggle="tooltip" data-original-title="Select all">  </i>
-                                    <i class="fa fa-square-o uncheck__all" aria-hidden="true" data-placement="top" data-toggle="tooltip" data-original-title="Unselect all"></i>
-                                </div>                                                            
-                                <div class=""> 
-                                    {{ form.note|as_crispy_field }}
-                                </div>                           
-                            </div>       
-                        </div>                          
-                              
-                </fieldset>                  
-                <div class="form-group btn-group__access" style="justify-content:flex-start">
-                 {% with request.resolver_match.url_name as url_name %} 
-                   {% if url_name == 'new-scrape'%} 
-                         <button class="btn btn-success btn__accessb btn-sm" type="submit" >Submit</button>  
-                    {% else %}
-                         <button class="btn btn-success btn__access btn-sm "type="submit">Save</button>
-                         <a class="btn btn-secondary btn__accessb btn-sm" href="{% url 'site-detail' targetsite.project targetsite.pk%}"> Back </a>  
-                   {% endif %}  
-                {% endwith %}    
-                </div>         
-        </form>      
-    </div>     
-</section>
-{% endblock content%}
+  Shared by /scrape/new/ and /project/<slug>/<pk>/update/.
+  Uses vdp-* layout from main.css (not Bootstrap/crispy) so styles match
+  project_form.html and targetsites.html after the base.html theme migration.
 
-{% block js %} 
-// Add datalist
-const status = document.getElementById('div_id_status');
-const domain = document.getElementById('id_site_id')
+  JS: newscrape.js (extra_js) — provider combobox, account pre-fill (?account=),
+      checkbox All/None toolbar.
+#}
 
-// hide status if new-scrape
-if('{{request.resolver_match.url_name}}' === 'new-scrape' || '{{request.user.is_superuser}}' ==='False') status.style.display ='none'
-// add input validation indicator
-if('{{form.errors.site_id}}') domain.classList.add('is-invalid') 
- 
+{% block title %}Scrape Bucket — {{ request.resolver_match.url_name | str_split:'-' | str_join:' ' | title }}{% endblock %}
+{% block page_heading %}{{ request.resolver_match.url_name | str_split:'-' | str_join:' ' | title }}{% endblock %}
+
+{% block content %}
+<div class="vdp-page-header">
+  {# Edit flow only — returns to site detail (/project/<slug>/<site_id>/) #}
+  {% if request.resolver_match.url_name == 'update-scrape' %}
+  <a
+    href="{% url 'site-detail' object.project.name object.pk %}"
+    class="vdp-site-detail__back"
+  >
+    <i class="fa fa-arrow-left" aria-hidden="true"></i>
+    Back to {{ object.site_name.account_name|default:object.site_id }}
+  </a>
+  {% endif %}
+  <h4>{{ request.resolver_match.url_name | str_split:'-' | str_join:' ' | title }}</h4>
+  <p>
+    {% if request.resolver_match.url_name == 'new-scrape' %}
+    Submit a new scraping target, pick an account, provider, and fields to collect.
+    {% else %}
+    Update scrape settings for this target site.
+    {% endif %}
+  </p>
+</div>
+
+<div class="vdp-card">
+  <form method="post" enctype="multipart/form-data" novalidate class="vdp-scrape-form">
+    {% csrf_token %}
+
+    {% if form.non_field_errors %}
+    <div class="vdp-scrape-form__alert">
+      {{ form.non_field_errors }}
+    </div>
+    {% endif %}
+
+    <div class="vdp-scrape-form__body">
+      {# ── Site information ─────────────────────────────────── #}
+      <div>
+        <h5 class="vdp-scrape-form__section-title">Information</h5>
+        <div class="vdp-scrape-form__fields">
+
+          <div>
+            <label for="{{ form.site_name.id_for_label }}" class="vdp-label">{{ form.site_name.label }}</label>
+            {{ form.site_name }}
+            {% if form.site_name.errors %}
+            <p class="vdp-error">{{ form.site_name.errors|join:', ' }}</p>
+            {% endif %}
+          </div>
+
+          <div>
+            <label for="{{ form.site_url.id_for_label }}" class="vdp-label">{{ form.site_url.label }}</label>
+            {{ form.site_url }}
+            {% if form.site_url.errors %}
+            <p class="vdp-error">{{ form.site_url.errors|join:', ' }}</p>
+            {% endif %}
+          </div>
+
+          <div>
+            {# Web Provider: plain {{ form.web_provider }} — combobox menu injected by newscrape.js #}
+            <label for="{{ form.web_provider.id_for_label }}" class="vdp-label">
+              Web Provider
+              <span
+                class="vdp-field-hint"
+                title="If a web provider is not in the list, type a new one, and it will be added on submit."
+              >
+                <i class="fa fa-circle-question" aria-hidden="true"></i>
+              </span>
+            </label>
+            {{ form.web_provider }}
+            {% if form.web_provider.errors %}
+            <p class="vdp-error">{{ form.web_provider.errors|join:', ' }}</p>
+            {% endif %}
+          </div>
+
+          <div>
+            <label for="{{ form.project.id_for_label }}" class="vdp-label">{{ form.project.label }}</label>
+            {{ form.project }}
+            {% if form.project.errors %}
+            <p class="vdp-error">{{ form.project.errors|join:', ' }}</p>
+            {% endif %}
+          </div>
+
+          <div class="vdp-scrape-form__field-row">
+            <div>
+              <label for="{{ form.site_id.id_for_label }}" class="vdp-label">
+                {{ form.site_id.label }}
+                <span
+                  class="vdp-field-hint"
+                  title="Example: url https://www.google.com -> domain name: google"
+                >
+                  <i class="fa fa-circle-question" aria-hidden="true"></i>
+                </span>
+              </label>
+              {{ form.site_id }}
+              {% if form.site_id.errors %}
+              <p class="vdp-error">{{ form.site_id.errors|join:', ' }}</p>
+              {% endif %}
+            </div>
+            <div>
+              <label for="{{ form.feed_id.id_for_label }}" class="vdp-label">{{ form.feed_id.label }}</label>
+              {{ form.feed_id }}
+              {% if form.feed_id.errors %}
+              <p class="vdp-error">{{ form.feed_id.errors|join:', ' }}</p>
+              {% endif %}
+            </div>
+          </div>
+
+          {% if request.resolver_match.url_name != 'new-scrape' and request.user.is_superuser %}
+          {# Status only on edit — new scrapes default to Pending in the model #}
+          <div>
+            <label for="{{ form.status.id_for_label }}" class="vdp-label">{{ form.status.label }}</label>
+            {{ form.status }}
+            {% if form.status.errors %}
+            <p class="vdp-error">{{ form.status.errors|join:', ' }}</p>
+            {% endif %}
+          </div>
+          {% endif %}
+
+        </div>
+      </div>
+
+      {# ── Items to download ────────────────────────────────── #}
+      <div>
+        <div class="vdp-scrape-form__section-header">
+          <h5 class="vdp-scrape-form__section-title">Items to download</h5>
+          <div class="vdp-scrape-form__checkbox-toolbar">
+            <button type="button" class="vdp-scrape-form__toolbar-btn" data-check-all title="Select all">
+              <i class="fa fa-check-double" aria-hidden="true"></i>
+              All
+            </button>
+            <button type="button" class="vdp-scrape-form__toolbar-btn" data-uncheck-all title="Unselect all">
+              <i class="fa fa-square" aria-hidden="true"></i>
+              None
+            </button>
+          </div>
+        </div>
+
+        <div class="vdp-scrape-checkboxes">
+          <div class="vdp-scrape-checkboxes__col">
+            <div class="vdp-checkbox-row">
+              {{ form.condition }}
+              <label for="{{ form.condition.id_for_label }}">{{ form.condition.label }}</label>
+            </div>
+            <div class="vdp-checkbox-row">
+              {{ form.unit }}
+              <label for="{{ form.unit.id_for_label }}">{{ form.unit.label }}</label>
+            </div>
+            <div class="vdp-checkbox-row">
+              {{ form.year }}
+              <label for="{{ form.year.id_for_label }}">{{ form.year.label }}</label>
+            </div>
+            <div class="vdp-checkbox-row">
+              {{ form.make }}
+              <label for="{{ form.make.id_for_label }}">{{ form.make.label }}</label>
+            </div>
+            <div class="vdp-checkbox-row">
+              {{ form.model }}
+              <label for="{{ form.model.id_for_label }}">{{ form.model.label }}</label>
+            </div>
+            <div class="vdp-checkbox-row">
+              {{ form.trim }}
+              <label for="{{ form.trim.id_for_label }}">{{ form.trim.label }}</label>
+            </div>
+            <div class="vdp-checkbox-row">
+              {{ form.stock_number }}
+              <label for="{{ form.stock_number.id_for_label }}">{{ form.stock_number.label }}</label>
+            </div>
+          </div>
+
+          <div class="vdp-scrape-checkboxes__col">
+            <div class="vdp-checkbox-row">
+              {{ form.vin }}
+              <label for="{{ form.vin.id_for_label }}">{{ form.vin.label }}</label>
+            </div>
+            <div class="vdp-checkbox-row">
+              {{ form.vehicle_url }}
+              <label for="{{ form.vehicle_url.id_for_label }}">{{ form.vehicle_url.label }}</label>
+            </div>
+            <div class="vdp-checkbox-row">
+              {{ form.msrp }}
+              <label for="{{ form.msrp.id_for_label }}">{{ form.msrp.label }}</label>
+            </div>
+            <div class="vdp-checkbox-row">
+              {{ form.price }}
+              <label for="{{ form.price.id_for_label }}">{{ form.price.label }}</label>
+            </div>
+            <div class="vdp-checkbox-row">
+              {{ form.selling_price }}
+              <label for="{{ form.selling_price.id_for_label }}">{{ form.selling_price.label }}</label>
+            </div>
+            <div class="vdp-checkbox-row">
+              {{ form.rebate }}
+              <label for="{{ form.rebate.id_for_label }}">{{ form.rebate.label }}</label>
+            </div>
+            <div class="vdp-checkbox-row">
+              {{ form.discount }}
+              <label for="{{ form.discount.id_for_label }}">{{ form.discount.label }}</label>
+            </div>
+          </div>
+
+          <div class="vdp-scrape-checkboxes__col">
+            <div class="vdp-checkbox-row">
+              {{ form.images }}
+              <label for="{{ form.images.id_for_label }}">{{ form.images.label }}</label>
+            </div>
+            <div class="vdp-checkbox-row">
+              {{ form.images_count }}
+              <label for="{{ form.images_count.id_for_label }}">{{ form.images_count.label }}</label>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="vdp-scrape-form__notes">
+      <label for="{{ form.note.id_for_label }}" class="vdp-label">{{ form.note.label }}</label>
+      {{ form.note }}
+      {% if form.note.errors %}
+      <p class="vdp-error">{{ form.note.errors|join:', ' }}</p>
+      {% endif %}
+    </div>
+
+    <div class="vdp-scrape-form__actions">
+      {% if request.resolver_match.url_name == 'new-scrape' %}
+      <button type="submit" class="vdp-btn vdp-btn--primary">
+        <i class="fa fa-paper-plane" aria-hidden="true"></i>
+        Submit scrape
+      </button>
+      {% else %}
+      <button type="submit" class="vdp-btn vdp-btn--primary">
+        <i class="fa fa-floppy-disk" aria-hidden="true"></i>
+        Save changes
+      </button>
+      <a
+        href="{% url 'site-detail' object.project.name object.pk %}"
+        class="vdp-scrape-form__cancel"
+      >Back to site</a>
+      {% endif %}
+    </div>
+  </form>
+</div>
+{% endblock content %}
+
+{% block extra_js %}
+{# Must load before inline {% block js %} — addProviderDataList() lives here #}
+<script src="{% static 'js/newscrape.js' %}"></script>
+{% endblock %}
+
+{% block js %}
+<script>
+// Highlight domain field when server-side validation fails (replaces old is-invalid).
+const domain = document.getElementById('id_site_id');
+if (domain && '{{ form.errors.site_id|yesno:"true,false" }}' === 'true') {
+  domain.classList.add('vdp-input--invalid');
+}
+
 addProviderDataList(
- addAimDealerList,
- '/web-provider-json/',
- '/aim-dealer-provider-json/'
+  addAccountList,
+  '/web-provider-json/',
+  '/account-provider-json/',
 );
-
- 
-{% endblock %}   
+</script>
+{% endblock %}

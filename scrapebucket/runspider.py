@@ -80,11 +80,12 @@ def crawl(arg: str):
         _safe_reactor_stop()
         return
 
-    # Single-spider mode: match by name, delete only that site's prior scrapes.
+    # Single-spider mode: match by Scrapy ``name`` (e.g. ``omni_auto``), not class name
+    # (``OmniautoSpider`` would not match ``omni_autospider``).
     ran = False
     # Runnable-only rows from ``match_spiders``; no extra status/account checks here.
     for spider, url, domain, _status in match_spiders(TargetSite, settings):
-        if spider.__name__.lower() != f'{arg_l}spider':
+        if spider.name.lower() != arg_l:
             continue
         ts = TargetSite.objects.filter(site_id__exact=domain).first()
         if ts is not None:

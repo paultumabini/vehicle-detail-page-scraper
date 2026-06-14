@@ -1,4 +1,4 @@
-"""Webflow CMS inventory (Finsweet filters): VDP slugs use ``/{locale}-listing/{vin}``."""
+"""Webflow CMS inventory (Finsweet filters): VDP slugs use ``/{locale}-listing/vin-{vin}``."""
 
 import re
 from urllib.parse import urlparse
@@ -10,7 +10,7 @@ from scrapy.spiders import CrawlSpider, Rule
 
 from ..items import ScrapebucketItem
 
-_LISTING_PATH = re.compile(r'/(?:en|fr)-listing/[A-HJ-NPR-Z0-9]{17}$', re.I)
+_LISTING_PATH = re.compile(r'/(?:en|fr)-listing/(?:vin-)?[A-HJ-NPR-Z0-9]{17}$', re.I)
 
 
 class WebflowSpider(CrawlSpider):
@@ -51,7 +51,8 @@ class WebflowSpider(CrawlSpider):
         ).get()
         vin2 = response.xpath('//input[@name="vehicleVIN"]/@value').get()
         vin3 = response.xpath('//input[@id="vehicleVIN-batd"]/@value').get()
-        vin4 = response.url.rstrip('/').rsplit('/', 1)[-1]
+        slug = response.url.rstrip('/').rsplit('/', 1)[-1]
+        vin4 = slug[4:].upper() if slug.lower().startswith('vin-') else slug
         vin = vin1 or vin2 or vin3 or vin4
 
         loader = ItemLoader(item=ScrapebucketItem(), selector=response)

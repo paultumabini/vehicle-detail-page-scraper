@@ -1,11 +1,31 @@
-{% extends "users/base_user.html" %} 
-{% block content %}  
-  <div class="container text-center mt-4">
-    <h2> You've been logged out</h2>      
-        <div class="border-top pt-3">
-            <small class="" style="font-weight:500">
-                <a href="{% url 'login' %}" class="">Log In Again</a> 
-            </small>
-        </div>  
+{% extends 'users/base_user.html' %}
+
+{% block title %}VDP Scraper | Signed out{% endblock %}
+
+{% block content %}
+<!--
+  /logout/ — MyLogoutView (users.views.MyLogoutView).
+
+  Status-only page (no form): uses fa-user-slash, not _auth_brand_mark.html.
+  Django 6 clears the session on POST only. The nav user menu submits a CSRF
+  form (project/base.html); a GET request returns 405 Method Not Allowed.
+-->
+<div class="vdp-auth-page">
+  <div class="vdp-auth-card">
+    <div class="vdp-auth-brand">
+      <i
+        class="fa fa-user-slash vdp-auth-status-icon vdp-auth-status-icon--neutral"
+        aria-hidden="true"
+      ></i>
+      <h1 class="vdp-auth-title">You&rsquo;ve been logged out</h1>
+      <p class="vdp-auth-subtitle">Your session has ended. Sign in again to continue.</p>
     </div>
+
+    <a href="{% url 'login' %}" class="vdp-auth-submit vdp-auth-submit--link">Sign in again</a>
+
+    <p class="vdp-auth-footer">
+      <a href="{% url 'home' %}" class="vdp-auth-link">Back to dashboard</a>
+    </p>
+  </div>
+</div>
 {% endblock content %}

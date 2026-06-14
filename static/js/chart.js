@@ -1,262 +1,421 @@
 'use strict';
 
-//datasets
-const renderDatasets = (scrapes, barThickness, radius) => {
-  return [
-    {
-      label: `# of Scrapes (Total:${scrapes.reduce((acc, val) => acc + val.totalScrapes, 0).toLocaleString()})`,
-      data: [...scrapes.map(s => s.totalScrapes)],
-      type: 'bar',
-      backgroundColor: ['rgba(255, 99, 132, 0.5)', 'rgba(54, 162, 235, 0.5)', 'rgba(255, 206, 86, 0.5)', 'rgba(75, 192, 192, 0.5)', 'rgba(153, 102, 255, 0.5)', 'rgba(255, 159, 64, 0.5)', 'rgba(136, 131, 150, 0.5)', 'rgba(74, 217, 83, 0.5)', 'rgba(247, 0, 243, 0.5)'],
-      borderColor: ['rgba(255, 99, 132, 1)', 'rgba(54, 162, 235, 1)', 'rgba(255, 206, 86, 1)', 'rgba(75, 192, 192, 1)', 'rgba(153, 102, 255, 1)', 'rgba(255, 159, 64, 1)', 'rgba(136, 131, 150, 1)', 'rgba(74, 217, 83, 1)', 'rgba(247, 0, 243, 1)'],
-      borderWidth: 1,
-      barThickness: +`${barThickness}`,
-      borderRadius: +`${radius}`,
-      borderSkipped: false,
-      hoverBorderWidth: 2,
-    },
-  ];
+/*
+  chart.js — Dashboard charts (home.html only).
+
+  Two data sources:
+    1. SSR  — #dashboard-setup-data from views._dashboard_stats (setup KPIs + status chart)
+    2. AJAX — /spider-log-json/ for YTD template volume + 15-day activity (charts A/B/C)
+
+  Chart.js 4.x — uses scales.x / scales.y (not legacy yAxes). Palette matches brand tokens.
+ */
+
+/* ── Brand-aligned palette (matches Tailwind brand + status badges) ── */
+const VDP = {
+  font: "'Inter', system-ui, -apple-system, sans-serif",
+  grid: 'rgba(148, 163, 184, 0.18)',
+  text: '#64748b',
+  textDark: '#334155',
+  brand: '#7c3aed',
+  brandSoft: 'rgba(124, 58, 237, 0.12)',
+  sky: '#0ea5e9',
+  skySoft: 'rgba(14, 165, 233, 0.15)',
+  emerald: '#10b981',
+  emeraldSoft: 'rgba(16, 185, 129, 0.15)',
+  amber: '#f59e0b',
+  amberSoft: 'rgba(245, 158, 11, 0.18)',
+  rose: '#f43f5e',
+  slate: '#94a3b8',
+  series: [
+    '#7c3aed',
+    '#0ea5e9',
+    '#10b981',
+    '#f59e0b',
+    '#f43f5e',
+    '#8b5cf6',
+    '#06b6d4',
+    '#84cc16',
+    '#ec4899',
+  ],
+  statusColors: {
+    Active: '#10b981',
+    Pending: '#f59e0b',
+    Inactive: '#94a3b8',
+    Failed: '#f43f5e',
+    Paused: '#0ea5e9',
+  },
 };
 
-//tooltips
-const renderTooltips = (label, digit, unit) => {
-  const hhmmss = (l, time) => {
-    //convert min -> sec -> hh:mm:ss
-    const t = time * 60;
-    const h = Math.floor(t / 3600)
-        .toString()
-        .padStart(2, '0'),
-      m = Math.floor((t % 3600) / 60)
-        .toString()
-        .padStart(2, '0'),
-      s = Math.floor(t % 60)
-        .toString()
-        .padStart(2, '0');
-    return `${l}: ${h}:${m}:${s}`;
-  };
+Chart.defaults.font.family = VDP.font;
+Chart.defaults.color = VDP.text;
+Chart.defaults.plugins.legend.labels.usePointStyle = true;
+Chart.defaults.plugins.legend.labels.boxWidth = 8;
+Chart.defaults.plugins.legend.labels.padding = 16;
+Chart.defaults.plugins.tooltip.backgroundColor = '#1e293b';
+Chart.defaults.plugins.tooltip.titleFont = { weight: '600', size: 12 };
+Chart.defaults.plugins.tooltip.bodyFont = { size: 12 };
+Chart.defaults.plugins.tooltip.padding = 12;
+Chart.defaults.plugins.tooltip.cornerRadius = 8;
+Chart.defaults.plugins.tooltip.displayColors = true;
 
-  return {
-    callbacks: {
-      label: function (context) {
-        if (label === 'Elasped') {
-          const time = context.raw.toFixed(`${digit}`);
-          return hhmmss(label, time);
-        }
-        return `${label}: ${context.raw.toFixed(`${digit}`)}${unit}`;
-      },
-      afterBody: function (context) {
-        if (label === 'Elasped' || label === 'Scrapes') {
-          const data = [];
-          const prevIdx = context[0].dataIndex - 1;
-
-          if (prevIdx >= 0) {
-            const prevData = context[0].dataset.data[prevIdx];
-            const diff = context[0].raw - prevData;
-            data.push(`------------------------`);
-
-            data.push(`Diff: ${diff >= 0 ? `+${diff.toFixed(`${digit}`)}` : diff.toFixed(`${digit}`)}${unit}`);
-
-            const percentChange = (diff / prevData) * 100;
-            data.push(`% Change: ${percentChange.toFixed(2) + '%'}`);
-          } else {
-            data.push(`------------------------`);
-            data.push(`Diff:  n/a `);
-            data.push(`% Change: n/a`);
-          }
-          return data;
-        }
-      },
+const baseScales = (xLabel = '', yLabel = '', { horizontal = false } = {}) => {
+  // Chart.js 4 scale config — shared by bar/line charts on the dashboard.
+  const category = {
+    grid: { display: false },
+    border: { display: false },
+    ticks: {
+      color: VDP.text,
+      font: { size: 11, weight: '500' },
+      maxRotation: horizontal ? 0 : 45,
+      minRotation: 0,
     },
   };
-};
-
-// scales
-const renderScales = (textX, textY, gridX, gridY) => {
-  return {
-    yAxes: {
-      beginAtZero: true,
-      title: {
-        display: true,
-        text: `${textX}`,
-        font: {
-          size: 12,
-          weight: 'bold',
-          lineHeight: 1,
-        },
-        padding: { top: 0, left: 0, right: 0, bottom: 15 },
-      },
-      grid: {
-        display: `${gridX}` === 'true',
-        borderDash: [5, 5],
-      },
-      ticks: {
-        autoSkip: false,
-        // stepSize: 0,
-        // maxRotation: `${angle}`,
-        // minRotation: `${angle}`,
-      },
+  const value = {
+    beginAtZero: true,
+    grid: { color: VDP.grid, drawBorder: false },
+    border: { display: false },
+    ticks: {
+      color: VDP.text,
+      font: { size: 11 },
+      precision: 0,
     },
-    xAxes: {
-      ticks: {
-        autoSkip: true,
-        // stepSize: 0,
-        // maxRotation: `${angle}`,
-        // minRotation: `${angle}`,
-      },
-      grid: {
-        display: `${gridY}` === 'true',
-        borderDash: [5, 5],
-      },
-      title: {
-        display: true,
-        text: `${textY}`,
-        font: {
-          size: 12,
-          weight: 'bold',
-          lineHeight: 1,
-        },
-      },
-    },
-  };
-};
-
-const renderPlugins = (titleText, subText, label, index, unit) => {
-  return {
     title: {
-      display: true,
-      text: titleText,
+      display: Boolean(yLabel),
+      text: yLabel,
+      color: VDP.textDark,
+      font: { size: 11, weight: '600' },
     },
-    legend: {
-      labels: {
-        usePointStyle: true,
-        pointStyle: 'rectRounded',
-      },
-    },
-    subtitle: {
-      display: true,
-      text: subText,
-      color: 'blue',
-      font: {
-        size: 12,
-        family: 'tahoma',
-        weight: 'normal',
-        style: 'italic',
-      },
-      padding: {
-        bottom: 10,
-      },
-    },
-    tooltip: renderTooltips(label, index, unit),
   };
+
+  return horizontal
+    ? { x: value, y: { ...category, title: { display: Boolean(xLabel), text: xLabel, color: VDP.textDark, font: { size: 11, weight: '600' } } } }
+    : { x: { ...category, title: { display: Boolean(xLabel), text: xLabel, color: VDP.textDark, font: { size: 11, weight: '600' } } }, y: value };
 };
 
-const chartA = scrapeData => {
-  const ctx = document.getElementById('chartA__canvas').getContext('2d');
-  ctx.setLineDash([5, 15]);
-  const myChart = new Chart(ctx, {
+const removeSpinner = containerSelector => {
+  document.querySelectorAll(`${containerSelector} .spinner-pulse`).forEach(el => el.remove());
+};
+
+const showChartError = containerSelector => {
+  removeSpinner(containerSelector);
+  const container = document.querySelector(containerSelector);
+  if (!container) return;
+  container.insertAdjacentHTML(
+    'beforeend',
+    '<p class="vdp-chart-error">Failed to load chart data</p>',
+  );
+};
+
+const renderDatasets = (scrapes, barThickness = 10, radius = 6) => [
+  {
+    label: `Scrapes (total: ${scrapes.reduce((acc, val) => acc + val.totalScrapes, 0).toLocaleString()})`,
+    data: scrapes.map(s => s.totalScrapes),
+    type: 'bar',
+    backgroundColor: scrapes.map((_, i) => VDP.series[i % VDP.series.length] + 'cc'),
+    borderColor: scrapes.map((_, i) => VDP.series[i % VDP.series.length]),
+    borderWidth: 0,
+    barThickness,
+    borderRadius: radius,
+    borderSkipped: false,
+  },
+];
+
+const elapsedTooltip = {
+  callbacks: {
+    label(context) {
+      const minutes = context.raw;
+      const totalSec = Math.round(minutes * 60);
+      const h = String(Math.floor(totalSec / 3600)).padStart(2, '0');
+      const m = String(Math.floor((totalSec % 3600) / 60)).padStart(2, '0');
+      const s = String(totalSec % 60).padStart(2, '0');
+      return `Elapsed: ${h}:${m}:${s}`;
+    },
+    afterBody(context) {
+      const prevIdx = context[0].dataIndex - 1;
+      if (prevIdx < 0) return ['—', 'Diff: n/a', '% Change: n/a'];
+      const prev = context[0].dataset.data[prevIdx];
+      const diff = context[0].raw - prev;
+      const pct = prev ? ((diff / prev) * 100).toFixed(1) + '%' : 'n/a';
+      return ['—', `Diff: ${diff >= 0 ? '+' : ''}${diff.toFixed(1)} min`, `% Change: ${pct}`];
+    },
+  },
+};
+
+const scrapeVolumeTooltip = {
+  callbacks: {
+    afterBody(context) {
+      const prevIdx = context[0].dataIndex - 1;
+      if (prevIdx < 0) return ['—', 'Diff: n/a', '% Change: n/a'];
+      const prev = context[0].dataset.data[prevIdx];
+      const diff = context[0].raw - prev;
+      const pct = prev ? ((diff / prev) * 100).toFixed(1) + '%' : 'n/a';
+      return ['—', `Diff: ${diff >= 0 ? '+' : ''}${diff.toLocaleString()}`, `% Change: ${pct}`];
+    },
+  },
+};
+
+/* ── Setup coverage (SSR data from home.html json_script) ─────── */
+
+const readSetupData = () => {
+  // Populated by {{ dashboard|json_script:"dashboard-setup-data" }} in home.html.
+  const el = document.getElementById('dashboard-setup-data');
+  if (!el) return null;
+  try {
+    return JSON.parse(el.textContent);
+  } catch {
+    return null;
+  }
+};
+
+const chartSetupCoverage = setup => {
+  // Donut: configured vs need_setup among ACTIVE accounts (mirrors Accounts page filter).
+  const canvas = document.getElementById('chartSetup__canvas');
+  if (!canvas) return;
+
+  const configured = setup.configured_count || 0;
+  const needSetup = setup.need_setup_count || 0;
+  const total = configured + needSetup;
+
+  new Chart(canvas, {
+    type: 'doughnut',
     data: {
-      labels: [...scrapeData.map(s => `${s.spider_name} (${[...new Set(s.sites)].length})`)],
-      datasets: renderDatasets(scrapeData, 8, 20),
+      labels: ['Configured', 'Need setup'],
+      datasets: [
+        {
+          data: [configured, needSetup],
+          backgroundColor: [VDP.emerald, VDP.amber],
+          borderColor: '#fff',
+          borderWidth: 3,
+          hoverOffset: 6,
+        },
+      ],
     },
     options: {
-      indexAxis: 'y', // orientation is vertical
+      cutout: '68%',
       responsive: true,
-      aspectRatio: 1,
       maintainAspectRatio: false,
-      scales: renderScales('Templates', 'Items', false, true),
-      plugins: renderPlugins(`Scraped Items`, '(Year to date)', 'YTD Scrapes', 0, ''),
+      plugins: {
+        legend: { position: 'bottom' },
+        tooltip: {
+          callbacks: {
+            label(ctx) {
+              const pct = total ? ((ctx.raw / total) * 100).toFixed(1) : 0;
+              return `${ctx.label}: ${ctx.raw.toLocaleString()} (${pct}%)`;
+            },
+          },
+        },
+      },
+    },
+    plugins: [
+      {
+        // Custom plugin — total ACTIVE accounts in the donut hole.
+        id: 'centerText',
+        beforeDraw(chart) {
+          const { ctx, chartArea } = chart;
+          if (!chartArea) return;
+          const cx = (chartArea.left + chartArea.right) / 2;
+          const cy = (chartArea.top + chartArea.bottom) / 2 - 6;
+          ctx.save();
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillStyle = VDP.textDark;
+          ctx.font = '600 1.65rem Inter, system-ui, sans-serif';
+          ctx.fillText(total.toLocaleString(), cx, cy);
+          ctx.fillStyle = VDP.text;
+          ctx.font = '500 0.7rem Inter, system-ui, sans-serif';
+          ctx.fillText('active accounts', cx, cy + 22);
+          ctx.restore();
+        },
+      },
+    ],
+  });
+};
+
+const chartSetupComparison = setup => {
+  // Bar labels mirror dashboard KPI cards: Active accounts | Scrape sites | Need setup.
+  const canvas = document.getElementById('chartCompare__canvas');
+  if (!canvas) return;
+
+  new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: ['Active accounts', 'Scrape sites', 'Need setup'],
+      datasets: [
+        {
+          label: 'Count',
+          data: [
+            setup.active_account_count || 0,
+            setup.active_site_count || 0,
+            setup.need_setup_count || 0,
+          ],
+          backgroundColor: [VDP.skySoft, VDP.emeraldSoft, VDP.amberSoft],
+          borderColor: [VDP.sky, VDP.emerald, VDP.amber],
+          borderWidth: 2,
+          borderRadius: 8,
+          barThickness: 48,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label(ctx) {
+              return `${ctx.label}: ${ctx.raw.toLocaleString()}`;
+            },
+          },
+        },
+      },
+      scales: baseScales('', 'Count'),
+    },
+  });
+};
+
+const chartSiteStatus = setup => {
+  // Horizontal bar; colors align with .status-badge pills in main.css.
+  const canvas = document.getElementById('chartStatus__canvas');
+  if (!canvas) return;
+
+  const statusOrder = ['Active', 'Pending', 'Paused', 'Inactive', 'Failed'];
+  const statusMap = setup.site_status || {};
+  const labels = statusOrder.filter(s => statusMap[s]);
+  const values = labels.map(s => statusMap[s]);
+  const colors = labels.map(s => VDP.statusColors[s] || VDP.slate);
+
+  new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Target sites',
+          data: values,
+          backgroundColor: colors.map(c => c + '33'),
+          borderColor: colors,
+          borderWidth: 2,
+          borderRadius: 6,
+          barThickness: 28,
+        },
+      ],
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: baseScales('Status', 'Sites', { horizontal: true }),
+    },
+  });
+};
+
+const renderSetupCharts = () => {
+  const setup = readSetupData();
+  if (!setup) return;
+  chartSetupCoverage(setup);
+  chartSetupComparison(setup);
+  chartSiteStatus(setup);
+};
+
+/* ── Spider log charts (AJAX from /spider-log-json/) ───────────── */
+
+const chartA = scrapeData => {
+  // YTD items scraped grouped by spider template (unchanged data shape from legacy chart.js).
+  const canvas = document.getElementById('chartA__canvas');
+  if (!canvas) return;
+
+  new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: scrapeData.map(
+        s => `${s.spider_name} (${[...new Set(s.sites)].length} sites)`,
+      ),
+      datasets: renderDatasets(scrapeData, 8, 6),
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { position: 'bottom' } },
+      scales: baseScales('Template', 'Items scraped', { horizontal: true }),
     },
   });
 
-  // remove spinner
-  document.querySelector('.spinner-pulse').remove();
+  removeSpinner('.chart-A');
 };
 
 const chartB = scrapeData => {
-  const ctx = document.getElementById('chartB__canvas').getContext('2d');
-  const gradientBg = ctx.createLinearGradient(0, 0, 100, 0);
+  const canvas = document.getElementById('chartB__canvas');
+  if (!canvas) return;
 
-  const sortedData = scrapeData.sort((a, b) => (a.dateCreated > b.dateCreated ? 1 : -1));
+  const sortedData = [...scrapeData].sort((a, b) =>
+    a.dateCreated > b.dateCreated ? 1 : -1,
+  );
+  const recent = sortedData.slice(-15);
 
-  const myChart = new Chart(ctx, {
+  new Chart(canvas, {
+    type: 'bar',
     data: {
-      labels: [
-        ...sortedData
-          .slice(-15) //render the last 30 day scrapeData
-          .map(s => `${s.dateCreated} (${s.sites.length})`),
-      ],
-      datasets: renderDatasets(sortedData.slice(-15), 8, 20),
+      labels: recent.map(s => `${s.dateCreated} (${s.sites.length})`),
+      datasets: renderDatasets(recent, 12, 6),
     },
     options: {
       responsive: true,
-      //   aspectRatio: 1,
-      //   maintainAspectRatio: false,
-      scales: renderScales('Items', '', true, false),
-      plugins: renderPlugins('Scraped Items', '(Last 15-day scrapes)', 'Scrapes', 0, ''),
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'bottom' },
+        tooltip: scrapeVolumeTooltip,
+      },
+      scales: baseScales('Date', 'Items scraped'),
     },
   });
 
-  // remove spinner
-  document.querySelector('.spinner-pulse').remove();
+  removeSpinner('.chart-B-C');
 };
 
 const chartC = scrapeData => {
-  const ctx = document.getElementById('chartC__canvas').getContext('2d');
-  const sortedData = scrapeData.sort((a, b) => (a.dateCreated > b.dateCreated ? 1 : -1));
+  const canvas = document.getElementById('chartC__canvas');
+  if (!canvas) return;
 
-  const gradientBackground = ctx.createLinearGradient(0, 0, 0, 400);
-  gradientBackground.addColorStop(0, 'rgba(150, 217, 255,1)');
-  gradientBackground.addColorStop(0.6, 'rgba(150, 217, 255,0)');
+  const sortedData = [...scrapeData].sort((a, b) =>
+    a.dateCreated > b.dateCreated ? 1 : -1,
+  );
+  const recent = sortedData.slice(-15);
+  const ctx = canvas.getContext('2d');
+  const gradient = ctx.createLinearGradient(0, 0, 0, 280);
+  gradient.addColorStop(0, 'rgba(124, 58, 237, 0.25)');
+  gradient.addColorStop(1, 'rgba(124, 58, 237, 0)');
 
-  const gradientBorder = ctx.createLinearGradient(0, 0, 0, 510);
-  gradientBorder.addColorStop(1, 'rgba(45, 174, 247,8)');
-  1;
-
-  //   const gradientBackground = ctx.createLinearGradient(500, 0, 100, 0);
-  //   const gradientBorder = ctx.createLinearGradient(500, 0, 100, 0);
-
-  //   gradientBackground.addColorStop(1, 'rgba(247, 0, 243, .15)');
-  //   gradientBackground.addColorStop(0.5, 'rgba(244, 67, 54, .15)');
-  //   gradientBackground.addColorStop(0, 'rgba(71, 57, 250,.15)');
-
-  //   gradientBorder.addColorStop(0, 'rgba(71, 57, 250,.8)');
-  //   gradientBorder.addColorStop(0.5, 'rgba(244, 67, 54, .8)');
-  //   gradientBorder.addColorStop(1, 'rgba(247, 0, 243, .8)');
-
-  const myChart = new Chart(ctx, {
+  new Chart(canvas, {
+    type: 'line',
     data: {
-      labels: [...sortedData.slice(-15).map(s => s.dateCreated)], //render the last 30 day scrapeData
+      labels: recent.map(s => s.dateCreated),
       datasets: [
         {
-          label: 'Scrape/ Elapsed Time',
-          data: [...sortedData.slice(-15).map(s => s.totalElapsed)],
-          type: 'line',
-
-          backgroundColor: gradientBackground,
-          borderColor: gradientBorder,
-          pointBorderColor: gradientBorder,
-          pointBackgroundColor: gradientBorder,
-          pointHoverBackgroundColor: gradientBorder,
-          pointHoverBorderColor: gradientBorder,
-          tension: 0.4,
+          label: 'Elapsed time (minutes)',
+          data: recent.map(s => s.totalElapsed),
+          borderColor: VDP.brand,
+          backgroundColor: gradient,
+          pointBackgroundColor: '#fff',
+          pointBorderColor: VDP.brand,
+          pointBorderWidth: 2,
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          tension: 0.35,
           fill: true,
         },
       ],
     },
     options: {
       responsive: true,
-      //   aspectRatio: 1,
-      //   maintainAspectRatio: false,
-      scales: renderScales('Minutes', 'Days', true, false),
+      maintainAspectRatio: false,
       plugins: {
-        legend: {
-          labels: {
-            usePointStyle: true,
-            pointStyle: 'rectRounded',
-          },
-        },
-        tooltip: renderTooltips('Elasped', 2, 'min'),
+        legend: { position: 'bottom' },
+        tooltip: elapsedTooltip,
       },
+      scales: baseScales('Date', 'Minutes'),
     },
   });
 };
@@ -278,47 +437,38 @@ const renderCharting = logs => {
         acc[spider_name].sites.push(allowed_domain),
         acc
       ),
-      {}
-    )
+      {},
+    ),
   );
 
   chartA(output);
   filterScrapeDays(logs);
 };
 
-//Get Date
-
 const filterScrapeDays = data => {
-  const calcDaysPassed = (prevDates, lastDate) => Math.round(Math.abs(lastDate - prevDates) / (1000 * 60 * 60 * 24));
-  const daysCreated = data
+  const daysCreated = [...data]
     .sort((a, b) => (a.date_created > b.date_created ? 1 : -1))
-    // .filter(
-    //   d =>
-    //     calcDaysPassed(
-    //       new Date(d.date_created),
-    //       new Date(data[data.length - 1].date_created)
-    //     ) <= 30
-    // )
     .map(obj => {
-      const [m, d, y] = new Date(obj.date_created).toLocaleString('en-US' /*{ timeZone: 'US/Pacific' }*/).split(',')[0].split('/');
+      const [m, d, y] = new Date(obj.date_created)
+        .toLocaleString('en-US')
+        .split(',')[0]
+        .split('/');
       return {
         dateCreated: `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`,
         provider: obj.spider_name,
         site: obj.target_site_id,
         scrapes: +obj.items_scraped,
         elaspedTimSec1: +obj.elapsed_time_seconds,
-        elaspedTimeSec2: obj.elapsed_time,
       };
     });
 
   const output = Object.values(
     daysCreated.reduce(
-      (acc, { dateCreated, provider, site, scrapes, elaspedTimSec1, elaspedTimeSec2 }) => (
+      (acc, { dateCreated, provider, site, scrapes, elaspedTimSec1 }) => (
         (acc[dateCreated] ??= {
           dateCreated,
           providers: [],
           sites: [],
-          elaspedTimeSec2,
           count: 0,
           totalScrapes: 0,
           totalElapsed: 0,
@@ -330,8 +480,8 @@ const filterScrapeDays = data => {
         acc[dateCreated].sites.push(site),
         acc
       ),
-      {}
-    )
+      {},
+    ),
   );
 
   chartB(output);
@@ -339,31 +489,45 @@ const filterScrapeDays = data => {
 };
 
 const getSpiderLogs = () => {
+  // Legacy endpoint — full SpiderLog dump; client aggregates for charts A/B/C.
   const spinners = {
-    'chart-A': 'chart-A',
-    chartBC: 'chart-B-C',
+    'chart-A': '.chart-A',
+    chartBC: '.chart-B-C',
   };
 
-  Object.entries(spinners).forEach(([key, value]) => {
-    document.querySelector(`.${value}`).insertAdjacentHTML(
+  Object.entries(spinners).forEach(([, selector]) => {
+    const container = document.querySelector(selector);
+    if (!container) return;
+    container.insertAdjacentHTML(
       'beforeend',
-      `<div class="spinner-pulse ${key} text-success"> 
-         <i class="fa fa-spinner fa-pulse fa-2x fa-fw mt-1"></i> 
-       </div>
-            `
+      `<div class="spinner-pulse text-brand-600 grid place-items-center py-16">
+         <i class="fa fa-spinner fa-pulse fa-2x fa-fw"></i>
+       </div>`,
     );
   });
 
-  $.ajax({
-    type: 'GET',
-    url: '/spider-log-json/',
-    contentType: 'application/json; charset=utf-8',
-    dataType: 'json',
-    success: function (data) {
+  fetch('/spider-log-json/', {
+    headers: { Accept: 'application/json' },
+    credentials: 'same-origin',
+  })
+    .then(response => {
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return response.json();
+    })
+    .then(data => {
       renderCharting(data);
-    },
-    error: function (error) {
-      console.log(error);
-    },
-  });
+    })
+    .catch(error => {
+      console.error('Dashboard chart load failed:', error);
+      showChartError('.chart-A');
+      showChartError('.chart-B-C');
+    });
 };
+
+document.addEventListener('DOMContentLoaded', function () {
+  // Setup charts render immediately from SSR; spider charts wait on fetch.
+  renderSetupCharts();
+  if (document.getElementById('chartA__canvas')) {
+    getSpiderLogs();
+  }
+});

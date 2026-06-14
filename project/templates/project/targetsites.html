@@ -1,140 +1,79 @@
-
-{% extends 'project/base.html'%}
+{% extends 'project/base.html' %}
 {% load static %}
-{% block content %} 
 {% load tz %}
-{% load custom_filters  %}
-{% block title %} Scrape Bucket/Project  - {{ project | str_split:'-' | str_join:' ' | title  }} {% endblock %}
-    <section class="site-list"> 
-        <div  class="target-sites">  
-            <h3 align="left" class="ml-3 pt-3"> {{project | str_split:'-' | str_join:' '| title | str_upper:'Aim' | str_upper:'Vdp' | str_upper:'Urls'}}</h3>  
-            <center class="dropdown__menus">
-                <table>
-                    <tbody>
-                    <tr>
-                        <td align="left" class="status_filter">
-                        <span>Status</span> <br />
-                        <select class="form-group" id="scrape-status">
-                            <option value="">ALL</option>
-                            {% with sites|get_field_values:'status' as statuses %}  
-                            {% for status in statuses %}
-                                <option value="{{ status }}"> {{ status }} </option>
-                            {% endfor %} 
-                            {% endwith %}                                                    
-                        </select>
-                        </td>                 
-                        <td align="left" class="temp_filter">
-                        <span>Web Provider</span> <br />
-                        <select id="site-provider">
-                            <option value="">ALL</option>
-                            {% with sites|get_field_values:'web_provider' as web_providers %}  
-                            {% for provider in web_providers %}
-                                <option value="{{ provider }}"> {{ provider }} </option>
-                            {% endfor %} 
-                            {% endwith %}   
-                        </select>
-                        </td>                  
-                    </tr>
-                    </tbody>
-                </table>
-                </center>                     
-            <table id="dealers-list-table" class="table  table-hover ">    
-                <thead class="thead-light">
-                    <tr>
-                    <th style="text-align:center" scope="col">Seq#</th>
-                    <th>Site Name</th>         
-                    <th>Site URL</th>
-                    <th>Provider</th>
-                    <th >Status</th>                   
-                    <th>Last Run</th>                    
-                    <th>Owner</th>                   
-                    <th>Create Date</th>                   
-                    <th style="text-align:center">Actions</th>                   
-                    </tr> 
-                </thead>
-                <tbody id="sites_list" > 
-                {% for site in sites %}  
-                    <tr>                        
-                    <td scope="row" align="center" >                        
-                        <div class="darker__primary hover__effect  table-hover"> 
-                            <a href=" {% url 'site-detail' site.project site.pk %}" >{{ site.entry_code }}</a>
-                        </div>
-                    </td>
-                    <td>
-                        <div class="darker__primary hover__effect">
-                            <a href=" {% url 'site-detail' site.project site.pk %}" >{{ site.site_name.dealer_name }} </a>
-                        <div>
-                    </td>
-                    <td>
-                        <div class="lighter__primary hover__effect">
-                                <a href=" {{ site.site_url }}" target="_blank"> {{ site.site_url }}</a>
-                        </div>
-                    </td>
-                    <td>  
-                        <div>                     
-                                {{ site.web_provider }}                               
-                        </div>                     
-                    </td>
-                    <td align="left">
-                        <div class="status {{site.get_status_display|lower}}">
-                            <span>{{ site.get_status_display|upper }}</span>
-                        </div>
-                    </td>                    
-                    <td>
-                        <div>
-                            {% if site.get_status_display == 'Pending' %}
-                            processing...
-                            {% elif site.get_status_display == 'Inactive' %}
-                            paused
-                            {% elif  site.spider_logs.last.date_created|date:'dmY' == site.scrapes.last.last_checked|date:'dmY' %}
-                            {{ site.scrapes.last.last_checked | timezone:'US/Eastern'|date:'Y-m-d H:i:s' | replace_if_empty:'running...'}}
-                            {% else %}
-                            running...
-                            {% endif %}
-                        </div>
-                    </td>
-                    <td style="text-align:left" title="created by: {{site.author}}">
-                        <div>
-                            <span class="author__image"><img src="{{ site.author.profile.image.url }}" aria-label="{{site.author}}"></span> 
-                            <span>{{ site.author | title}}</span>
-                        </div>
-                    </td>   
-                    <td style="text-align:left">
-                        <div>
-                            <span>{{ site.date_created |timezone:'US/Eastern'|date:'Y-m-d'}}</span>                            
-                        </div>
-                    </td>                  
-                    <td align="center"> 
-                        <div class="download-delete-btn">                  
-                        <a href="{% url 'scrape-csv' sites.first.project.name %}?target_id={{site.pk}}" >
-                            <div class="download-btn">
-                                <div class="left">
-                                    <i class="fas fa-download"></i> 
-                                </div>
-                                <div class="right">
-                                    <i class="fas fa-file-csv"></i>
-                                </div>
-                            </div>    
-                        </a>                                            
-                            <div class="delete-btn openDeleteModal" data-site-id="{{site.site_id}}" data-site-name="{{site}}" data-entry-code="{{site.entry_code}}">
-                                <div class="left">
-                                    <i class="fa fa-times"></i>
-                                </div>
-                                <div class="right">
-                                    <i class="fa fa-trash"></i>                                  
-                                </div>
-                            </div>          
-                        </div>                                        
-                    </td>
-                    </tr> 
-                {% endfor%}           
-                </tbody >       
-            </table>          
-        </div>    
-    </section>    
-{% endblock content%}
-{% block js %} 
+{% load custom_filters %}
 
-    const deleteItemModal = func => func('{{project}}','site-info')
+{% block title %}VDP Scraper | {{ project | str_split:'-' | str_join:' ' | title }}{% endblock %}
+{% block page_heading %}Target Sites{% endblock %}
 
+{% block content %}
+<div class="vdp-page-header">
+  <h4>
+    {{ project | str_split:'-' | str_join:' ' | title | str_upper:'Aim' | str_upper:'Vdp' | str_upper:'Urls' }}
+  </h4>
+  <p>Scraping targets · filter by status or web provider</p>
+</div>
+
+<div class="vdp-card mb-4">
+      <div class="vdp-filter-bar">
+        <div>
+          <label for="scrape-status" class="vdp-filter-label">Status</label>
+          {# Default Active — synced with TARGET_SITES_DEFAULT_STATUS in main.js #}
+          <select id="scrape-status" class="vdp-filter-select">
+            <option value="">All</option>
+            {% with sites|get_field_values:'status' as statuses %}
+              {% for status in statuses %}
+              <option value="{{ status }}"{% if status == 'Active' %} selected{% endif %}>{{ status }}</option>
+              {% endfor %}
+            {% endwith %}
+          </select>
+        </div>
+
+        <div>
+          <label for="site-provider" class="vdp-filter-label">Web Provider</label>
+          <select id="site-provider" class="vdp-filter-select">
+            <option value="">All</option>
+            {% with sites|get_field_values:'web_provider' as web_providers %}
+              {% for provider in web_providers %}
+              <option value="{{ provider }}">{{ provider }}</option>
+              {% endfor %}
+            {% endwith %}
+          </select>
+        </div>
+  </div>
+</div>
+
+<div class="vdp-card p-0 overflow-hidden target-sites-table-card">
+      <table id="dealers-list-table" class="w-full vdp-data-table">
+        <thead>
+          <tr>
+            <th class="text-center" scope="col">Entry#</th>
+            <th>Site Name</th>
+            <th>Site URL</th>
+            <th>Provider</th>
+            <th>Status</th>
+            <th>Last Run</th>
+            <th>Owner</th>
+            <th>Create Date</th>
+            <th class="text-center">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="sites_list">
+          {% for site in sites %}
+          {% include 'project/partials/target_site_row.html' %}
+          {% empty %}
+          <tr>
+            <td colspan="9" class="vdp-empty-row">No target sites for this project.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+  </table>
+</div>
+
+{% endblock content %}
+
+{% block js %}
+<script>
+  const deleteItemModal = func => func('{{ project }}', 'site-info');
+</script>
 {% endblock %}

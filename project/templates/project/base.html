@@ -1,169 +1,600 @@
-{% load static %}
-{% load tz %}
-<!DOCTYPE html>
-<html>
-  <head>    
-    <link   rel="stylesheet"
-      href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css"
-      integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm"
+{% load static %} {% load tz %}
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+
+    <!--
+    viewport: required for mobile browsers.
+    Without this the page renders at 980px on phones.
+  -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!--
+    Sidebar bootstrap (runs before first paint).
+    Alpine loads deferred at the bottom, so :class bindings are not applied on
+    the initial frame. Without this, width transitions animate from auto → target
+    on every reload/navigation and the sidebar appears to jerk or collapse.
+
+    Sets data-sidebar-open / data-sidebar-compact on <html>; main.css mirrors
+    those attributes until Alpine adds vdp-sidebar--* classes. Persisted in
+    localStorage as vdp-sidebar-open ('1' expanded, '0' collapsed).
+    Use HTML comments here — not {# #} (can leak into the document).
+  -->
+    <script>
+      (function () {
+        var KEY = 'vdp-sidebar-open';
+        var stored = null;
+        try {
+          stored = localStorage.getItem(KEY);
+        } catch (e) {
+          /* private browsing / blocked storage — fall back to viewport default */
+        }
+        var open;
+        if (stored !== '0' && stored !== '1') {
+          /* first visit or corrupt value: expanded on md+, hidden on mobile */
+          open = window.innerWidth >= 768;
+        } else {
+          open = stored === '1';
+        }
+        var root = document.documentElement;
+        root.dataset.sidebarOpen = open ? '1' : '0';
+        /* collapsed desktop rail: icon-only layout (see vdp-sidebar--compact) */
+        if (!open && window.innerWidth >= 768) {
+          root.dataset.sidebarCompact = '1';
+        }
+      })();
+    </script>
+
+    <!--
+    vdpApp() MUST live in <head> so it exists before deferred Alpine runs.
+    body uses x-data="vdpApp()"; Alpine evaluates it on init, not at parse time.
+  -->
+    <script>
+      var SIDEBAR_STORAGE_KEY = 'vdp-sidebar-open';
+
+      function vdpApp() {
+        var SIDEBAR_MS = 300; /* keep in sync with --vdp-sidebar-width-ms in main.css */
+        var root = document.documentElement;
+
+        return {
+          /* initial state read from head bootstrap (dataset on <html>) */
+          sidebarOpen: root.dataset.sidebarOpen === '1',
+          sidebarCompact: root.dataset.sidebarCompact === '1',
+          _sidebarTimer: null,
+
+          init: function () {
+            /* enable width/label transitions only after Alpine binds :class once */
+            requestAnimationFrame(function () {
+              requestAnimationFrame(function () {
+                root.dataset.vdpReady = '1';
+              });
+            });
+
+            this.$watch('sidebarOpen', function (open) {
+              /* keep html[data-*] in sync for main.css fallbacks + localStorage */
+              root.dataset.sidebarOpen = open ? '1' : '0';
+              try {
+                localStorage.setItem(SIDEBAR_STORAGE_KEY, open ? '1' : '0');
+              } catch (e) {
+                /* ignore */
+              }
+
+              clearTimeout(this._sidebarTimer);
+              if (open) {
+                this.sidebarCompact = false;
+                delete root.dataset.sidebarCompact;
+                return;
+              }
+              /* desktop: wait for width transition, then switch to icon rail */
+              if (window.innerWidth >= 768) {
+                var self = this;
+                this._sidebarTimer = setTimeout(function () {
+                  if (!self.sidebarOpen) {
+                    self.sidebarCompact = true;
+                    root.dataset.sidebarCompact = '1';
+                  }
+                }, SIDEBAR_MS);
+              } else {
+                this.sidebarCompact = false;
+                delete root.dataset.sidebarCompact;
+              }
+            });
+
+            this.$watch('sidebarCompact', function (compact) {
+              if (compact) {
+                root.dataset.sidebarCompact = '1';
+              } else {
+                delete root.dataset.sidebarCompact;
+              }
+            });
+          },
+
+          deleteModal: {
+            show: false,
+            siteName: '',
+            formAction: '',
+          },
+
+          openDeleteModal: function (project, model, siteId, siteName) {
+            this.deleteModal.siteName = siteName;
+            this.deleteModal.formAction =
+              '/project/' + project + '/' + model + '/' + siteId + '/delete/';
+            this.deleteModal.show = true;
+          },
+        };
+      }
+    </script>
+
+    <!--
+    Inter: clean modern font — same as the mockup and Unfold admin.
+    preconnect tells the browser to open the Google Fonts connection early.
+  -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+
+    <!--
+    Tailwind CSS Play CDN.
+    Generates utility classes on the fly — no build step needed.
+    The <script> block below configures a custom purple "brand" colour palette.
+    For production later: replace with a compiled Tailwind build via Vite.
+  -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              /*
+              Brand purple — MUST match static/css/admin-extra.css (--sb-admin-accent).
+            */
+              brand: {
+                50: '#f5f3ff',
+                100: '#ede9fe',
+                200: '#ddd6fe',
+                300: '#c4b5fd',
+                400: '#a78bfa',
+                500: '#8b5cf6',
+                600: '#7c3aed' /* PRIMARY — buttons, links, active states */,
+                700: '#6d28d9',
+                800: '#5b21b6',
+                900: '#4c1d95',
+                950: '#2e1065',
+              },
+              /* Mockup sidebar navy — pairs with purple accents */
+              sidebar: '#151c28',
+              surface: '#f4f6f9' /* mockup --surface */,
+            },
+            fontFamily: {
+              sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+            },
+            borderRadius: {
+              card: '10px',
+            },
+            boxShadow: {
+              card: '0 1px 3px rgba(15, 23, 42, 0.08), 0 4px 12px rgba(15, 23, 42, 0.04)',
+            },
+          },
+        },
+      };
+    </script>
+
+    <!--
+    Font Awesome 6 — ONE load only.
+    FA 6 is backwards-compatible: fa fa-bars still works (aliased automatically).
+  -->
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
       crossorigin="anonymous"
     />
-    <script src="https://kit.fontawesome.com/a81368914c.js"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css" />
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">    
-    <link rel="stylesheet" href="https://cdn.datatables.net/1.10.24/css/jquery.dataTables.min.css" />
-    <link rel="stylesheet" type="text/css" href="{% static 'css/main.css' %}" />   
 
-    <link rel="shortcut icon" type="image/png" href="{% static 'images/sb_sm.png' %}"/>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.7.1/chart.min.js"></script>
-    <script defer src="{% static 'js/main.js'%}">  </script> 
-    <script defer src="{% static 'js/datascraped.js'%}">  </script> 
-    <script  src="{% static 'js/newscrape.js'%}">  </script> 
-    <script  src="{% static 'js/chart.js'%}">  </script> 
-    <title> 
-        {% block title %}  {% endblock %}
-    </title>    
+    <!--
+    DataTables CSS removed — tables use vdp-data-table styles in main.css.
+  -->
+
+    <!--
+    Custom CSS — loaded last so it overrides Tailwind where needed.
+  -->
+    <link rel="stylesheet" href="{% static 'css/main.css' %}" />
+
+    <!-- App icon + favicons — gradient fa-spider, transparent (see static/images/app-icon-*) -->
+    <link rel="icon" type="image/png" sizes="32x32" href="{% static 'images/favicon-32.png' %}" />
+    <link rel="icon" type="image/png" sizes="16x16" href="{% static 'images/favicon-16.png' %}" />
+    <link rel="apple-touch-icon" sizes="180x180" href="{% static 'images/apple-touch-icon.png' %}" />
+    <link rel="icon" type="image/png" sizes="192x192" href="{% static 'images/app-icon-192.png' %}" />
+
+    <!-- Per-page head: child templates use the extra_head block (see home.html). -->
+    {% block extra_head %}{% endblock %}
+
+    <title>{% block title %}VDP Scraper{% endblock %}</title>
   </head>
-  <body>     
-      <header class="site-header">        
-        <nav class="container-fluid">
-            <div class="navbar navbar-expand-lg navbar-dark nav-bg-color fixed-top">          
-                <div type="button" id="sidebarCollapse"> 
-                  <div class="menu-btn-burger"></div>
-                </div>                
-               <a class="navbar-brand logo" href="{% url 'home' %}"><img src="{% static 'images/sb_sm.png' %}"> Scrapes Bucket</a>
-                <button class="navbar-toggler bg-info" type="button" data-toggle="collapse" data-target="#navbarToggle" aria-controls="navbarToggle" aria-expanded="false" aria-label="Toggle navigation">
-                  <span class="navbar-toggler-icon"></span>
-                </button>
-              <div class="collapse navbar-collapse" id="navbarToggle">
-                <div class="navbar-nav mr-auto">
-                  <a class="nav-item nav-link" href="{% url 'new-scrape' %}">                    
-                     <button class="btn btn-success new-scrape">
-                      <i class="fa  fa-plus" style="font-size: .9rem;"></i> &nbsp;
-                       New Scrape
-                      </button>
-                  </a>                 
-                </div>
-                <!-- Profile image -->
-                <div class="navbar-nav mr-5"> 
-                  <div class="extend-focus"> </div> 
-                  <div class="nav-profile">
-                    <div class="profile">
-                      <img src="{{ user.profile.image.url }}">     
-                    </div>
-                      <div class="menu" align="center"><small>Logged in as</small>
-                        <h3>{{user.username}}</h3>
-                        <ul>
-                          <li><img src="{% static 'images/profile.png' %}"><a   href="{% url 'profile' %}"> Profile </a></li>
-                          <li ><img src="{% static 'images/log-out.png' %}"><a  href="{% url 'logout' %}"> Logout </a></li>       
-                        </ul>
-                      </div>   
-                  </div>                           
-                </div>
-              </div>              
-            </div>           
-        </nav>      
-      </header>     
-     
-      <div class="wrapper">
-            <nav id="sidebar">              
-            <ul class=" list-unstyled components">
-                <!-- link 1 -->
-                <li>
-                <a class="dashboard highlight-hover {{ active_highlight}}" href="{% url 'home' %}">
-                    <i class="fa fa-dashboard"></i>  
-                    <span class="sidebar-label">Dashboard</span>
-                </a>
-                </li>
-                <!-- link 2 -->
-                <li class="">              
-                <a href="#home-submenu" data-toggle="collapse" aria-expanded="true" class="dropdown-toggle  dropdown-toggle-main highlight-hover {{ aim_highlight }}"> 
-                    <i class="fa fa-clipboard"></i>
-                    <span class="sidebar-label">Projects</span>
-                    <i class="dropdown-arrow fa fa-angle-{{ dropdown_arrow }} caret"></i>
-                </a>
-                <ul class="collapse list-unstyled {{ dropdown }} {{submenu}}" id="home-submenu">
-                    <li>
-                      <a  class="submenu underline-hover {{ aim_dealers_selected }} " href="{% url 'site-list' 'aim-dealers' %}">AIM Dealers</a>
-                    </li>     
-                    <!-- <li>
-                        <a  class="submenu underline-hover {{ vdp_urls_selected }} " href="{% url 'site-list' 'vdp-urls' %}">AIM VDP URLS </a>
-                    </li>   -->
-                    <li>
-                      <a  class="submenu underline-hover {{ others_selected }}" href="{% url 'site-list' 'others' %}">Others</a>
-                    </li>   
-                </ul>
-                </li> 
-                 <!-- link 3 -->    
-                 <li>
-                    <a class="api_guide highlight-hover {{ api_guide_highlight }}" href="{% url 'api-docs' %}" >
-                        <i class="fa fa-link"></i>
-                        <span class="sidebar-label">API</span>                    
-                    </a>
-                </li>
-                <!-- link 4 -->    
-                <li>
-                <a class="help highlight-hover {{ help_highlight }}" href="{% url 'help' %}" >
-                    <i class="fa  fa-question-circle"></i>
-                    <span class="sidebar-label">Help</span>                    
-                </a>
-                </li>
-            </ul>            
-            </nav>
-            <div class="content-container"> 
-                <div class="flash-messages">     
-                    <div class="flash-messages-wrapper">  
-                        {% if messages %}
-                        {% for message in messages %}
-                            <div class="alert alert-{{ message.level_tag }}">
-                            <i class="fa fa-{{ message.extra_tags}}-circle" ></i> 
-                            <button type="button" class="close" data-dismiss="alert" aria-label="Close">
-                                <span aria-hidden="true">&times;</span>
-                            </button>                      
-                                {{ message }}                    
-                            </div>              
-                        {% endfor %}
-                        {% endif %}
-                    </div>                     
-                </div> 
-                <div class="message-wrapper">    
-                <!-- content block -->   
-                {% block content %} {% endblock %}
-                    <!-- Delete Modal -->
-                    <div class="modal fade" id="siteDeleteModal" tabindex="-1" role="dialog" aria-labelledby="siteDeleteModal" aria-hidden="true">
-                        <div class="modal-dialog modal-delete-width" role="document">
-                            <div class="modal-content">
-                                <div class="modal-header site-delete-header">
-                                <h5 class="modal-title">Confirmation</h5>
-                                <button type="button" class="close close-btn" data-dismiss="modal" aria-label="Close">
-                                    <span aria-hidden="true">&times;</span>
-                                </button>
-                                </div>
-                                <div class="modal-body modal-delete-body"> 
-                                    Are you sure you want to delete  <strong><span id="site-to-delete"> </span></strong> from the list?        
-                                </div> 
-                                <div class="modal-footer"> 
-                                    <button type="button" class="btn btn-secondary btn-sm" data-dismiss="modal">Cancel</button>
-                                    <form method="POST" action="" id="delete-form">
-                                        {% csrf_token %} 
-                                    <button class="btn btn-danger btn-outline btn-sm" type="submit" value="DELETE">Delete</button>
-                                    </form>          
-                                </div>      
-                            </div>
-                        </div>
-                    </div>                   
-               </div>           
-            </div>                     
-     </div>  
-    <script src="https://code.jquery.com/jquery-3.2.1.min.js" ></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jqueryui/1.12.1/jquery-ui.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/popper.js@1.12.9/dist/umd/popper.min.js" integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.0.0/dist/js/bootstrap.min.js" integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl" crossorigin="anonymous"></script>     
-    <script src="https://cdn.datatables.net/1.10.24/js/jquery.dataTables.min.js" type="text/javascript"></script>  
-    <script >       
-     
-          {% block js %} {% endblock %}                
-    </script>     
+
+  <!--
+  x-data="vdpApp()" — Alpine.js initialises the whole-page state here.
+  vdpApp() is defined in <head> (must load before deferred Alpine).
+  Controls: sidebarOpen, sidebarCompact, profile dropdown, deleteModal.
+-->
+  <body
+    class="min-h-screen bg-surface font-sans text-slate-800 antialiased flex"
+    x-data="vdpApp()"
+    @open-delete-modal.window="openDeleteModal($event.detail.project, $event.detail.site, $event.detail.siteId, $event.detail.siteName)"
+  >
+    <!-- Mobile backdrop when sidebar is open -->
+    <div
+      x-show="sidebarOpen"
+      x-transition.opacity
+      class="fixed inset-0 z-30 bg-slate-900/50 md:hidden"
+      style="display: none"
+      @click="sidebarOpen = false"
+    ></div>
+
+    <!-- ═══════════════════════════════════════════════════
+       SIDEBAR — full height, mockup + Unfold nav pattern
+  ════════════════════════════════════════════════════ -->
+    <!--
+       Sidebar width/classes: Alpine :class after init; pre-init layout from
+       html[data-sidebar-*] in main.css (see head bootstrap script).
+  -->
+    <aside
+      class="vdp-sidebar fixed md:static inset-y-0 left-0 z-40 flex flex-col bg-sidebar text-slate-400 shrink-0"
+      :class="{
+        'vdp-sidebar--expanded': sidebarOpen,
+        'vdp-sidebar--collapsed': !sidebarOpen,
+        'vdp-sidebar--compact': sidebarCompact,
+      }"
+    >
+      <div class="w-full min-w-0 flex flex-col flex-1 min-h-0">
+        <!-- Brand (mockup .sidebar-brand) -->
+        <a
+          href="{% url 'home' %}"
+          title="Dashboard"
+          class="sidebar-brand flex items-center gap-2.5 px-4 py-5 border-b border-white/[0.06] no-underline hover:bg-white/5 transition-colors"
+        >
+          <div
+            class="w-9 h-9 rounded-lg bg-gradient-to-br from-brand-500 to-sky-500 grid place-items-center text-white shrink-0 shadow-sm"
+          >
+            <i class="fa fa-spider text-[15px]" aria-hidden="true"></i>
+          </div>
+          <span class="sidebar-brand-text text-slate-100 font-semibold text-[15px] whitespace-nowrap"
+            >VDP Scraper</span
+          >
+        </a>
+
+        <nav
+          class="flex-1 overflow-y-auto py-3 px-2"
+          @click="window.innerWidth < 768 && $event.target.closest('a') && (sidebarOpen = false)"
+        >
+          <!--
+            Sidebar IA (see set_sidebar_nav in views, sidebar_projects in context_processors):
+            - Accounts = master registry (Account model), not a scrape project
+            - Target Sites = nested Project links (TargetSite lists), color-tagged
+            Active keys: sidebar_section, sidebar_project (base.html)
+          -->
+
+          <!-- Dashboard -->
+          <a
+            href="{% url 'home' %}"
+            title="Dashboard"
+            class="sidebar-nav-link flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium no-underline mb-0.5 {% if sidebar_section == 'dashboard' %}bg-brand-600/10 text-brand-300{% else %}text-slate-400 hover:text-slate-200 hover:bg-white/5{% endif %}"
+          >
+            <i class="fa fa-gauge w-4 text-center text-xs shrink-0"></i>
+            <span class="sidebar-nav-text whitespace-nowrap">Dashboard</span>
+          </a>
+
+          <!-- Accounts — upstream Account records synced from AIM API -->
+          <p
+            class="sidebar-section-title px-3 mt-5 mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-600"
+          >
+            Accounts
+          </p>
+
+          <a
+            href="{% url 'accounts' %}"
+            title="Accounts"
+            class="sidebar-nav-link sidebar-section-start flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium no-underline mb-0.5 {% if sidebar_section == 'accounts' %}bg-brand-600/10 text-brand-300{% else %}text-slate-400 hover:text-slate-200 hover:bg-white/5{% endif %}"
+          >
+            <i class="fa fa-table-list w-4 text-center text-xs shrink-0"></i>
+            <span class="sidebar-nav-text whitespace-nowrap">All Accounts</span>
+          </a>
+
+          <!-- Target Sites — scrape configs; one nav link per Project row -->
+          <p
+            class="sidebar-section-title px-3 mt-5 mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-600"
+          >
+            Target Sites
+          </p>
+
+          {% for proj in sidebar_projects %}
+          {# proj.color → .sidebar-project-dot--* in main.css; proj.name stays URL slug #}
+          <a
+            href="{% url 'site-list' proj.name %}"
+            title="{{ proj.display_label }}"
+            class="sidebar-nav-link sidebar-nav-link--nested flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium no-underline mb-0.5 {% if forloop.first %}sidebar-section-start{% endif %} {% if sidebar_section == 'target_sites' and sidebar_project == proj.name %}bg-brand-600/10 text-brand-300{% else %}text-slate-400 hover:text-slate-200 hover:bg-white/5{% endif %}"
+          >
+            <span
+              class="sidebar-project-dot sidebar-project-dot--{{ proj.color }} shrink-0"
+              aria-hidden="true"
+            ></span>
+            <span class="sidebar-nav-text whitespace-nowrap">{{ proj.display_label }}</span>
+          </a>
+          {% endfor %}
+
+          {% if user.is_staff %}
+          {# Staff create projects in-app (ProjectCreateView), not Django admin #}
+          <a
+            href="{% url 'new-project' %}"
+            title="Add project"
+            class="sidebar-nav-link sidebar-nav-link--nested flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium no-underline mb-0.5 text-slate-500 hover:text-brand-300 hover:bg-white/5"
+          >
+            <i class="fa fa-plus w-4 text-center text-[10px] shrink-0"></i>
+            <span class="sidebar-nav-text whitespace-nowrap">Add project</span>
+          </a>
+          {% endif %}
+
+          <!-- Info -->
+          <p
+            class="sidebar-section-title px-3 mt-5 mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-600"
+          >
+            Info
+          </p>
+
+          <a
+            href="{% url 'api-docs' %}"
+            title="API"
+            class="sidebar-nav-link sidebar-section-start flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium no-underline mb-0.5 {% if sidebar_section == 'api' %}bg-brand-600/10 text-brand-300{% else %}text-slate-400 hover:text-slate-200 hover:bg-white/5{% endif %}"
+          >
+            <i class="fa fa-link w-4 text-center text-xs shrink-0"></i>
+            <span class="sidebar-nav-text whitespace-nowrap">API</span>
+          </a>
+
+          <a
+            href="{% url 'help' %}"
+            title="Help"
+            class="sidebar-nav-link flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium no-underline mb-0.5 {% if sidebar_section == 'help' %}bg-brand-600/10 text-brand-300{% else %}text-slate-400 hover:text-slate-200 hover:bg-white/5{% endif %}"
+          >
+            <i class="fa fa-circle-question w-4 text-center text-xs shrink-0"></i>
+            <span class="sidebar-nav-text whitespace-nowrap">Help</span>
+          </a>
+        </nav>
+
+        <!-- Sidebar footer -->
+        <div
+          class="sidebar-footer px-4 py-4 border-t border-white/[0.06] text-[11px] text-slate-600"
+        >
+          <a
+            href="{% url 'admin:index' %}"
+            title="Django Admin"
+            class="sidebar-footer-link flex items-center gap-3 px-3 py-2 rounded-lg text-slate-500 hover:text-brand-300 no-underline"
+          >
+            <i class="fa fa-gear w-4 text-center text-xs shrink-0"></i>
+            <span class="sidebar-nav-text whitespace-nowrap">Django Admin</span>
+          </a>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ═══════════════════════════════════════════════════
+       MAIN COLUMN — white topbar + content (mockup .main)
+  ════════════════════════════════════════════════════ -->
+    <div class="flex-1 flex flex-col min-w-0 min-h-screen">
+      <!-- Top bar — white, not dark purple (mockup .topbar) -->
+      <header
+        class="h-14 bg-white border-b border-[#e8ecf1] flex items-center gap-3 px-4 md:px-5 shrink-0 sticky top-0 z-20"
+      >
+        <button
+          @click="sidebarOpen = !sidebarOpen"
+          class="p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-surface transition-colors"
+          :aria-label="sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'"
+          :aria-expanded="sidebarOpen"
+          title="Toggle sidebar"
+        >
+          <i
+            class="fa fa-angles-left text-sm transition-transform duration-300 ease-in-out"
+            :class="{ 'rotate-180': !sidebarOpen }"
+          ></i>
+        </button>
+
+        <div class="hidden sm:block text-sm text-slate-500">
+          {% block breadcrumb %}
+          <span class="font-semibold text-slate-800"
+            >{% block page_heading %}VDP Scraper{% endblock %}</span
+          >
+          {% endblock %}
+        </div>
+
+        <div class="flex-1"></div>
+
+        <a
+          href="{% url 'new-scrape' %}"
+          class="inline-flex items-center gap-1.5 px-3.5 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold rounded-lg shadow-sm transition-colors no-underline"
+        >
+          <i class="fa fa-plus text-xs"></i>
+          <span class="hidden sm:inline">New Scrape</span>
+        </a>
+
+        <div
+          class="relative"
+          x-data="{ open: false }"
+          @click.away="open = false"
+        >
+          <button
+            @click="open = !open"
+            class="flex items-center gap-2 text-slate-600 hover:text-slate-900 transition-colors ml-1"
+          >
+            <img
+              src="{{ user.profile.image.url }}"
+              class="w-8 h-8 rounded-full object-cover ring-2 ring-[#e8ecf1]"
+              alt="{{ user.username }}"
+            />
+            <span class="text-sm font-medium hidden md:block"
+              >{{ user.username }}</span
+            >
+            <i class="fa fa-angle-down text-xs text-slate-400"></i>
+          </button>
+
+          <div
+            x-show="open"
+            x-transition
+            class="absolute right-0 top-11 w-44 bg-white rounded-[10px] shadow-card border border-[#e8ecf1] py-1 z-50"
+            style="display: none"
+          >
+            <a
+              href="{% url 'profile' %}"
+              class="flex items-center gap-2.5 px-4 py-2 text-sm text-slate-700 hover:bg-surface no-underline"
+            >
+              <i class="fa fa-user text-slate-400 text-xs w-4 text-center"></i>
+              Profile
+            </a>
+            <div class="border-t border-slate-100 my-1"></div>
+            <!--
+              Logout — Django 6 POST-only (users.views.MyLogoutView).
+              Was href="{% url 'logout' %}"; GET returned 405 Method Not Allowed.
+            -->
+            <form method="post" action="{% url 'logout' %}" class="block m-0">
+              {% csrf_token %}
+              <button
+                type="submit"
+                class="flex items-center gap-2.5 px-4 py-2 text-sm text-slate-700 hover:bg-surface w-full border-0 bg-transparent cursor-pointer font-inherit text-left"
+              >
+                <i
+                  class="fa fa-right-from-bracket text-slate-400 text-xs w-4 text-center"
+                ></i>
+                Logout
+              </button>
+            </form>
+          </div>
+        </div>
+      </header>
+
+      <!-- Page content -->
+      <main class="flex-1 p-5 md:p-6 overflow-auto">
+        {% if messages %}
+        <div class="mb-4 max-w-3xl">
+          {% for message in messages %}
+          <div
+            x-data
+            x-init="setTimeout(() => $el.remove(), 5000)"
+            class="flex items-center gap-3 px-4 py-3 mb-2 rounded-[10px] border text-sm font-medium {% if message.level_tag == 'success' %}bg-green-50 border-green-200 text-green-800 {% elif message.level_tag == 'warning' %}bg-amber-50 border-amber-200 text-amber-800 {% elif message.level_tag == 'error' %}bg-red-50 border-red-200 text-red-800 {% else %}bg-brand-50 border-brand-200 text-brand-800{% endif %}"
+          >
+            <i
+              class="fa fa-{% if message.level_tag == 'success' %}check-circle{% elif message.level_tag == 'warning' %}triangle-exclamation{% elif message.level_tag == 'error' %}circle-exclamation{% else %}circle-info{% endif %}"
+            ></i>
+            <span>{{ message }}</span>
+            <button
+              @click="$el.closest('[x-data]').remove()"
+              class="ml-auto opacity-50 hover:opacity-100"
+            >
+              <i class="fa fa-times text-xs"></i>
+            </button>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %} {% block content %}{% endblock %}
+      </main>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════
+       DELETE CONFIRMATION MODAL
+       Replaces the old Bootstrap #siteDeleteModal.
+       Shown/hidden by Alpine's deleteModal.show state.
+       Triggered from main.js: $dispatch('open-delete-modal', {...})
+  ════════════════════════════════════════════════════ -->
+    <div
+      x-show="deleteModal.show"
+      x-transition:enter="transition ease-out duration-200"
+      x-transition:enter-start="opacity-0 scale-95"
+      x-transition:enter-end="opacity-100 scale-100"
+      x-transition:leave="transition ease-in duration-150"
+      x-transition:leave-start="opacity-100 scale-100"
+      x-transition:leave-end="opacity-0 scale-95"
+      class="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style="display: none"
+      @keydown.escape.window="deleteModal.show = false"
+    >
+      <!-- Backdrop — click to dismiss -->
+      <div
+        class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+        @click="deleteModal.show = false"
+      ></div>
+
+      <!-- Modal panel -->
+      <div
+        class="relative bg-white rounded-[10px] shadow-card border border-[#e8ecf1] w-full max-w-sm p-6"
+      >
+        <h3 class="text-base font-semibold text-slate-800 mb-1">
+          Confirm Delete
+        </h3>
+        <p class="text-sm text-slate-500 mb-6">
+          Are you sure you want to remove
+          <strong class="text-slate-700" x-text="deleteModal.siteName"></strong>
+          from the list?
+        </p>
+        <div class="flex justify-end gap-3">
+          <button
+            @click="deleteModal.show = false"
+            class="px-4 py-2 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+          >
+            Cancel
+          </button>
+          <form method="POST" :action="deleteModal.formAction">
+            {% csrf_token %}
+            <button
+              type="submit"
+              class="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
+            >
+              Delete
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════
+       SCRIPTS
+  ════════════════════════════════════════════════════ -->
+
+    <!--
+    Alpine.js — powers sidebar toggle, profile dropdown, delete modal,
+    and flash message auto-dismiss.
+    defer ensures it loads after the DOM is ready.
+  -->
+    <script
+      defer
+      src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"
+    ></script>
+
+    <!--
+    htmx — enables server-side HTML fragment swapping.
+    Used for inline row updates on the Accounts table.
+  -->
+    <script src="https://unpkg.com/htmx.org@2.0.0/dist/htmx.min.js"></script>
+
+    <!-- Vanilla table helpers — no jQuery/DataTables; see vdp_client_table.js + accounts.js -->
+    <script src="{% static 'js/vdp_client_table.js' %}"></script>
+
+    <!--
+    CSRF token for htmx POST requests.
+    Django rejects POST requests without this header (403 Forbidden).
+    Setting hx-headers on <body> applies to ALL htmx requests on the page.
+  -->
+    <script>
+      document.body.setAttribute(
+        'hx-headers',
+        JSON.stringify({ 'X-CSRFToken': '{{ csrf_token }}' }),
+      );
+    </script>
+
+    <!-- Your custom JS — loaded after all libraries -->
+    <script defer src="{% static 'js/main.js' %}"></script>
+
+    <!-- Per-page scripts — child templates inject their JS here -->
+    {% block extra_js %}{% endblock %}
+
+    {% block js %}{% endblock %}
   </body>
 </html>

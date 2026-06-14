@@ -1,3 +1,11 @@
+# Terraform 
+.terraform
+*.tfstate
+.terragrunt-cache
+
+# MAC Files
+**/.DS_Store
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -158,3 +166,11 @@ fixtures/*
 
 # Personal local dev tools (private configs)
 /local/pt/
+/local/backups/
+.vscode/
+.prettierignore
+
+# Company infrastructure (do not push to personal remotes)
+/devops/
+crontab.prod
+crontab.staging

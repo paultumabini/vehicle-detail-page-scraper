@@ -1,0 +1,18 @@
+<!--
+  Shared auth brand mark — users/templates/users/_auth_brand_mark.html
+
+  Included from form-based auth pages:
+    /login/, /register/, /password-reset/, /password-reset-confirm/ (valid link).
+
+  Change: replaced static/images/profile_login.png (generic green profile icon).
+  Now mirrors the app sidebar brand in project/base.html:
+    fa-spider on a purple→sky gradient tile (Tailwind brand-500 / sky-500).
+
+  Status-only pages (logout, password-reset/done, password-reset-complete, expired
+  confirm link) use .vdp-auth-status-icon instead — no include here.
+
+  Styles: .vdp-auth-logo-mark in static/css/main.css
+-->
+<div class="vdp-auth-logo-mark" role="img" aria-label="VDP Scraper">
+  <i class="fa fa-spider" aria-hidden="true"></i>
+</div>
