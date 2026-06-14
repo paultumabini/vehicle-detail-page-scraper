@@ -1,69 +1,180 @@
-"""D2C Media inventory: multiple legacy ``filterid`` query shapes on the same dealer."""
+"""D2C Media inventory via the dealer AJAX search API (UsedSrp2)."""
 
-from urllib.parse import urlparse
+import base64
+import json
+import re
+from typing import Any
+from urllib.parse import urljoin, urlparse
 
 import scrapy
-from scrapy.linkextractors import LinkExtractor
 from scrapy.loader import ItemLoader
-from scrapy.spiders import CrawlSpider, Rule
 
 from ..items import ScrapebucketItem
+from ..spider_helpers.response_json import loads_response_body
+
+_FILTER_SUFFIX = '-10x0-0-0'
+_FILTER_VARIANTS = ('a1b13q', 'a1b123d19q')
+_FILTER_ID = re.compile(r'id="filterid"\s+value="([^"]+)"', re.I)
+_CAR_ROW = re.compile(
+    r'data-vin="([^"]+)"[^>]*>.*?<a href="([^"]+)"',
+    re.I | re.S,
+)
 
 
-class D2cmediaSpider(CrawlSpider):
+class D2cmediaSpider(scrapy.Spider):
     """
-    Hits several ``inventory.html?filterid=...`` patterns per page index.
+    D2C UsedSrp2 dealers load inventory through::
 
-    Older deployments used Playwright to read total pages from the DOM; the
-    current approach uses a fixed page cap (0..8) and three filter variants
-    per index to cover template differences without one-off discovery.
+        POST /{lang}/ajax/getSearchVehiclesFromFilterObject?wswidth=1920
+
+    with a ``filterid`` form field (the JSON filter state from the hidden
+    ``#filterid`` input).  Pagination stops when the API returns ``count=0``;
+    ``fltPageId[1]`` in the filter blob is a UI cap (36), not inventory size.
+
+    VIN and VDP URL are parsed from the API ``html`` fragment (``data-vin`` and
+    ``carImage`` links); VDP pages are not crawled.
     """
 
     name = 'd2cmedia'
     domain_name = ''
 
+    custom_settings = {
+        'DOWNLOADER_MIDDLEWARES': {
+            'scrapebucket.middlewares.ScrapebucketDownloaderMiddleware': 543,
+        },
+    }
+
     def start_requests(self):
         self.domain_name = '.'.join(urlparse(self.url).netloc.split('.')[-2:])
+        yield scrapy.Request(
+            url=self.url,
+            callback=self.parse_home,
+            dont_filter=True,
+        )
 
-        # One-based page indices in the query string; cap limits crawl depth if pagination is unknown.
-        for page in range(8 + 1):
-            yield scrapy.Request(
-                url=f'{self.url}inventory.html?filterid=a1b123d19q{page}-10x0-0-0',
-                meta={'page': page},
+    def parse_home(self, response):
+        canonical = (
+            response.xpath('//link[@rel="canonical"]/@href').get() or response.url
+        )
+        parsed = urlparse(canonical)
+        base_url = f'{parsed.scheme}://{parsed.netloc}/'
+        lang = self._ajax_lang(response)
+        variant = _FILTER_VARIANTS[0]
+        yield scrapy.Request(
+            url=f'{base_url}inventory.html?filterid={variant}0{_FILTER_SUFFIX}',
+            callback=self.parse_config,
+            meta={
+                'base_url': base_url,
+                'lang': lang,
+                'variant': variant,
+                'variant_idx': 0,
+            },
+            dont_filter=True,
+        )
+
+    def parse_config(self, response):
+        basic = self._basic_filter(response)
+        if not basic:
+            yield from self._try_next_variant(response)
+            return
+
+        yield from self._inventory_request(
+            base_url=response.meta['base_url'],
+            lang=response.meta['lang'],
+            basic=basic,
+            page=0,
+        )
+
+    def _try_next_variant(self, response):
+        idx = response.meta['variant_idx'] + 1
+        if idx >= len(_FILTER_VARIANTS):
+            self.logger.warning('d2cmedia: no filterid on %s', response.url)
+            return
+
+        variant = _FILTER_VARIANTS[idx]
+        base_url = response.meta['base_url']
+        yield scrapy.Request(
+            url=f'{base_url}inventory.html?filterid={variant}0{_FILTER_SUFFIX}',
+            callback=self.parse_config,
+            meta={
+                **response.meta,
+                'variant': variant,
+                'variant_idx': idx,
+            },
+            dont_filter=True,
+        )
+
+    def _inventory_request(self, base_url, lang, basic, page):
+        proxy = dict[Any, Any](basic)
+        max_page = basic['fltPageId'][1]
+        proxy['fltPageId'] = [page, max_page]
+        body_inner = self._filterid_body(proxy)
+
+        yield scrapy.FormRequest(
+            url=(
+                f'{base_url}{lang}/ajax/getSearchVehiclesFromFilterObject?wswidth=1920'
+            ),
+            formdata={'filterid': body_inner},
+            callback=self.parse_inventory,
+            meta={
+                'base_url': base_url,
+                'lang': lang,
+                'basic': basic,
+                'page': page,
+            },
+            dont_filter=True,
+        )
+
+    def parse_inventory(self, response):
+        payload = loads_response_body(response.body, url=response.url, label=self.name)
+        if not payload:
+            return
+
+        html = payload.get('html') or ''
+        count = payload.get('count') or 0
+        base_url = response.meta['base_url']
+
+        for vin, path in _CAR_ROW.findall(html):
+            if not vin:
+                continue
+            loader = ItemLoader(item=ScrapebucketItem())
+            loader.add_value('vin', vin)
+            loader.add_value('vehicle_url', urljoin(base_url, path.lstrip('/')))
+            loader.add_value('domain', self.domain_name)
+            yield loader.load_item()
+
+        if count > 0:
+            yield from self._inventory_request(
+                base_url=base_url,
+                lang=response.meta['lang'],
+                basic=response.meta['basic'],
+                page=response.meta['page'] + 1,
             )
-            yield scrapy.Request(
-                url=f'{self.url}inventory.html?filterid=a1b13q{page}-10x0-0-0',
-                meta={'page': page},
-            )
-            yield scrapy.Request(
-                url=f'{self.url}inventory.html?filterid=a1b2q{page}-10x0-0-0',
-                meta={'page': page},
-            )
 
-    rules = (
-        Rule(
-            LinkExtractor(restrict_xpaths='//div[contains(@class,"carImage")]/a'),
-            callback='parse_item',
-            follow=True,
-            process_request='carry_page_meta',
-        ),
-    )
+    @staticmethod
+    def _ajax_lang(response):
+        lang = (
+            response.xpath('//input[@id="activesitelanguage"]/@value').get() or ''
+        ).strip()
+        if lang.upper().startswith('F'):
+            return 'fr'
+        return 'en'
 
-    def carry_page_meta(self, request, response):
-        # List responses set ``page`` in ``start_requests``; keep it when following to VDPs.
-        request.meta['page'] = response.meta.get('page', response.url)
-        return request
+    @staticmethod
+    def _basic_filter(response):
+        match = _FILTER_ID.search(response.text)
+        if not match:
+            return None
+        pad = '=' * (-len(match.group(1)) % 4)
+        try:
+            data = json.loads(base64.b64decode(match.group(1) + pad))
+        except (json.JSONDecodeError, ValueError):
+            return None
+        return data.get('basic')
 
-    def parse_item(self, response):
-        # VIN is exposed in different inputs depending on VDP layout / integrations.
-        vin1 = response.xpath('//span[@id="specsVin"]/text()').get()
-        vin2 = response.xpath('//input[@id="expresscarvin"]/@value').get()
-        vin3 = response.xpath('//input[@id="carproofcarvin"]/@value').get()
-        vin = vin1 or vin2 or vin3
-
-        loader = ItemLoader(item=ScrapebucketItem(), selector=response)
-        loader.add_value('vin', vin)
-        loader.add_value('vehicle_url', response.url)
-        loader.add_value('domain', self.domain_name)
-
-        yield loader.load_item()
+    @staticmethod
+    def _filterid_body(basic_filter):
+        """Match UsedSrp2 ``FilterRequest.process`` double-JSON encoding."""
+        currenturl = json.dumps(basic_filter)
+        encoded = json.dumps(currenturl).replace('\\"', '"')
+        return encoded[1:-1]

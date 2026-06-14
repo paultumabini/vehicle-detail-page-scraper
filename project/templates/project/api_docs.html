@@ -1,169 +1,165 @@
-{% extends 'project/base.html'%}
-{% load static%}
-{% block title %}  Scrape Bucket - {{ title | title }} {% endblock %}
+{% extends 'project/base.html' %}
+{% load static %}
+{% load custom_filters %}
 
-{% block content %} 
-{% load custom_filters  %}
-    <section class=" mt-4 pt-3">  
-        <div align="left"  class="api-page">          
-            <h3  class="ml-2 api-docs__header" > API Documentation</h3> 
-            <div>                 
-                <div class="api-docs__wrapper">
-                    <h5 class="mt-4 api__sec">Important details</h5>
-                    <div>      
-                        <ul>                           
-                            <li class="ml-3 mt-2 "> 
-                                Supports up to 100 API requests per hour
-                            </li>
-                            <li class="ml-3 mt-2 "> 
-                                Only <code> GET </code> requests allowed
-                            </li>
-                            <li class="ml-3 mt-2 "> 
-                                Requires Authorization Token
-                            </li>  
-                        </ul>  
-                    </div>
-                    <div>
-                        <ul class="list-unstyled components"> 
-                            <li>
-                                <a href="#myauthtoken" data-toggle="collapse" aria-expanded="false" class="dropdown-toggle ">
-                                    <span class="toggle-icon-control" aria-hidden="true">
-                                        <i class="toggle-icon fa fa-plus-square-o"></i>                                        
-                                        <span>My Authorization Token </span>
-                                    </span> 
-                                </a>
-                                <ul class="collapse list-unstyled" id="myauthtoken">                              
-                                    <li class="ml-3 mt-2 "> 
-                                       <code> {{ user | get_api_authtoken}}</code>
-                                    </li>                                                         
-                                </ul>
-                            </li> 
-                        </ul>  
-                    </div>
-                    <h5 class="mt-3 api__sec">Required Parameters</h5>
-                    <p>In order to fetch the data or <code> GET </code> a  <code> JSON</code>  response successfully,  a set of simple parameters needs to be followed.</p>
-                    <div>
-                        <ul class="list-unstyled components"> 
-                            <li>
-                                <a href="#base-url" data-toggle="collapse" aria-expanded="false" class="dropdown-toggle ">
-                                    <span class="toggle-icon-control" aria-hidden="true">
-                                        <i class="toggle-icon fa fa-plus-square-o"></i>                                        
-                                        <span>Base url & path</span>
-                                    </span> 
-                                </a>
-                                <ul class="collapse list-unstyled" id="base-url">                              
-                                    <li class="ml-3 mt-2 "> 
-                                        <code> https://scrapesbucket.com/</code> <br>
-                                        <code> https://scrapesbucket.com/api/scraped-items/&lt;project_name&gt;/</code>
-                                    </li>                                                         
-                                </ul>
-                            </li> 
-                        </ul>  
-                    </div>
-                    <div>
-                        <ul class="list-unstyled components"> 
-                            <li>
-                                <a href="#authtoken" data-toggle="collapse" aria-expanded="false" class="dropdown-toggle ">
-                                    <span class="toggle-icon-control" aria-hidden="true">
-                                        <i class="toggle-icon fa fa-plus-square-o"></i>                                   
-                                        <span>Authorization Token</span>
-                                    </span> 
-                                </a>
-                                <ul class="collapse list-unstyled" id="authtoken">                                                             
-                                    <li class="ml-3 mt-2  ">  
-                                        <p>Please add a request header with this authorization key value pair. For example:</p>     
-                                        <code> key = Authorization</code> <br/>
-                                        <code> value = Token 409ac621b8f96dd7302d3dfb3aa024d0f2cc4ca7</code>
-                                    </li>                                                         
-                                </ul>
-                            </li> 
-                        </ul>  
-                    </div> 
-                    <div>
-                        <ul class="list-unstyled components"> 
-                            <li>
-                                <a href="#q-str" data-toggle="collapse" aria-expanded="false" class="dropdown-toggle ">
-                                    <span class="toggle-icon-control" aria-hidden="true">
-                                        <i class="toggle-icon fa fa-plus-square-o"></i>                                   
-                                        <span> Query string parameters</span>
-                                    </span> 
-                                </a>
-                                <ul class="collapse list-unstyled" id="q-str">                              
-                                    <div>      
-                                        <ol style="list-style:circle";>                           
-                                            <li class="ml-3 mt-2 "> 
-                                                To access all available web providers and target sites, please use this url path pattern: 
-                                                <div>
-                                                    <code> https://scrapesbucket.com/api/scraped-items/aim-dealers/?webproviders=available&domains=all</code>
-                                                </div>
-                                            </li>
-                                            <li class="ml-3 mt-2 "> 
-                                                To specify one or more web providers, we may use this url path pattern:
-                                                <div>
-                                                    <code> https://scrapesbucket.com/api/scraped-items/aim-dealers/?webproviders=dealerinspire,nabthat,d2cmedia&domains=all</code>
-                                                </div>
-                                            </li>
-                                            <li class="ml-3 mt-2 "> 
-                                                To get a target site only, we need to specify the  site's domain, like this pattern: 
-                                                <div>
-                                                    <code> https://scrapesbucket.com/api/scraped-items/aim-dealers/?webproviders=dealerinspire&domains=taylorautomall</code>
-                                                </div>
-                                            </li>  
-                                        </ol>  
-                                    </div>                                                     
-                                </ul>
-                            </li> 
-                        </ul>  
-                    </div>                                       
-                    <h5 class="mt-4 api__sec">Examples</h5>
-                    <div>
-                        <ul class="list-unstyled components"> 
-                            <li>
-                                <a href="#postman" data-toggle="collapse" aria-expanded="false" class="dropdown-toggle ">
-                                    <span class="toggle-icon-control" aria-hidden="true">
-                                        <i class="toggle-icon fa fa-plus-square-o"></i>                                        
-                                        <span>Postman</span>
-                                    </span> 
-                                </a>
-                                <ul class="collapse list-unstyled" id="postman">   
-                                    <li class="ml-3 mt-2 ">  
-                                       <div class="api__screenshot">
-                                          <img src="{% static 'images/postman.png' %}"  />
-                                       </div>
-                                    </li>                                                         
-                                </ul>
-                            </li> 
-                        </ul>  
-                    </div>
-                    <div>
-                        <ul class="list-unstyled components"> 
-                            <li>
-                                <a href="#cli" data-toggle="collapse" aria-expanded="false" class="dropdown-toggle ">
-                                    <span class="toggle-icon-control" aria-hidden="true">
-                                        <i class="toggle-icon fa fa-plus-square-o"></i>                                   
-                                        <span>CLI using <code>curl</code> or <code>httpie</code></span>
-                                    </span> 
-                                </a>
-                                <ul class="collapse list-unstyled" id="cli">                              
-                                    <li class="ml-3 mt-2 "> 
-                                        <div>
-                                            <code> curl -X GET 'https://scrapesbucket.com/api/scraped-items/aim-dealers/?webproviders=available&domains=all' -H 'Authorization: Token 409ac621b8f96dd7302d3dfb3aa024d0f2cc4ca7'</code>
-                                            <code> curl -H "Authorization: Token 409ac621b8f96dd7302d3dfb3aa024d0f2cc4ca7" "https://scrapesbucket.com/api/scraped-items/aim-dealers/?webproviders=available&domains=all"</code>
-                                        </div>                                        
-                                        <div>
-                                            <code> http https://scrapesbucket.com/api/scraped-items/aim-dealers/ webproviders==available domains==all 'Authorization: Token 409ac621b8f96dd7302d3dfb3aa024d0f2cc4ca7'</code>
-                                            <code> http https://scrapesbucket.com/api/scraped-items/aim-dealers/\?webproviders\=available\&domains\=all 'Authorization: Token 409ac621b8f96dd7302d3dfb3aa024d0f2cc4ca7'</code>
-                                        </div> 
-                                        <div class="api__screenshot">
-                                            <img src="{% static 'images/httpie.png' %}"  />
-                                         </div>
-                                    </li>                                                         
-                                </ul>
-                            </li> 
-                        </ul>  
-                    </div>                 
-                </div>               
-            </div>            
-        </div> 
-    </section>
-{% endblock content%}
+{% block title %}VDP Scraper | API Documentation{% endblock %}
+{% block page_heading %}API{% endblock %}
+
+{% block content %}
+<!--
+  /api-docs/ — views.api_docs.
+
+  Documents project.api.views.get_scraped_items. Replaced Bootstrap data-toggle
+  collapse with native <details> (.vdp-accordion). URLs built server-side from
+  request host; token via get_api_authtoken filter. Screenshots: static/images/.
+-->
+<div class="vdp-page-header">
+  <h4>API Documentation</h4>
+  <p>
+    Read scraped inventory data as JSON via token-authenticated
+    <code class="vdp-code-inline">GET</code> requests.
+  </p>
+</div>
+
+<div class="vdp-card vdp-info-card">
+  <h5 class="vdp-info-section-title">Overview</h5>
+  <ul class="vdp-info-list">
+    <li><strong>Method:</strong> <code class="vdp-code-inline">GET</code> only</li>
+    <li><strong>Auth:</strong> DRF token in the <code class="vdp-code-inline">Authorization</code> header</li>
+    <li>
+      <strong>Rate limit:</strong> 100 requests per hour per user
+      (override with <code class="vdp-code-inline">DRF_THROTTLE_USER</code>)
+    </li>
+    <li>
+      <strong>Required query params:</strong>
+      <code class="vdp-code-inline">webproviders</code> and
+      <code class="vdp-code-inline">domains</code> on every request
+    </li>
+  </ul>
+</div>
+
+<div class="vdp-card vdp-info-card" x-data="{ copied: false }">
+  <h5 class="vdp-info-section-title">Your token</h5>
+  <p class="vdp-info-lead">
+    Send this value as <code class="vdp-code-inline">Token &lt;key&gt;</code> in the
+    <code class="vdp-code-inline">Authorization</code> header.
+  </p>
+  <div class="vdp-token-box">
+    <code id="api-user-token">Token {{ user|get_api_authtoken }}</code>
+    <button
+      type="button"
+      class="vdp-btn-secondary"
+      @click="navigator.clipboard.writeText(document.getElementById('api-user-token').textContent.trim()); copied = true; setTimeout(() => copied = false, 2000)"
+    >
+      <i class="fa fa-copy text-xs" aria-hidden="true"></i>
+      <span x-text="copied ? 'Copied' : 'Copy'"></span>
+    </button>
+  </div>
+</div>
+
+<div class="vdp-card vdp-info-card">
+  <h5 class="vdp-info-section-title">Endpoint</h5>
+  <div class="vdp-accordion">
+    <details class="vdp-accordion__item">
+      <summary class="vdp-accordion__trigger">Base URL and path</summary>
+      <div class="vdp-accordion__panel">
+        <p>Primary endpoint (current project slug):</p>
+        <code class="vdp-code-block">{{ api_endpoint }}</code>
+        <p class="mt-3 mb-0">Legacy alias (same handler, permanent redirect target):</p>
+        <code class="vdp-code-block">{{ api_legacy_endpoint }}</code>
+      </div>
+    </details>
+
+    <details class="vdp-accordion__item">
+      <summary class="vdp-accordion__trigger">Authorization header</summary>
+      <div class="vdp-accordion__panel">
+        <p>Add a request header with your token:</p>
+        <code class="vdp-code-block">Authorization: Token {{ user|get_api_authtoken }}</code>
+      </div>
+    </details>
+
+    <details class="vdp-accordion__item">
+      <summary class="vdp-accordion__trigger">Query string parameters</summary>
+      <div class="vdp-accordion__panel">
+        <p><code class="vdp-code-inline">webproviders</code> and <code class="vdp-code-inline">domains</code> are required.</p>
+        <ul class="vdp-info-list">
+          <li>
+            List all providers and domains:
+            <code class="vdp-code-block">{{ api_sample_url }}</code>
+          </li>
+          <li>
+            Filter by one or more providers (comma-separated):
+            <code class="vdp-code-block">{{ api_endpoint }}?webproviders=dealerinspire,nabthat,d2cmedia&amp;domains=all</code>
+          </li>
+          <li>
+            Single provider and single domain (<code class="vdp-code-inline">site_id</code>):
+            <code class="vdp-code-block">{{ api_endpoint }}?webproviders=dealerinspire&amp;domains=taylorautomall</code>
+          </li>
+        </ul>
+        <p class="vdp-info-note mb-0">
+          Use <code class="vdp-code-inline">webproviders=available</code> with
+          <code class="vdp-code-inline">domains=all</code> to discover active providers.
+          Multi-provider requests require <code class="vdp-code-inline">domains=all</code>.
+        </p>
+      </div>
+    </details>
+  </div>
+</div>
+
+<div class="vdp-card vdp-info-card">
+  <h5 class="vdp-info-section-title">Examples</h5>
+  <div class="vdp-accordion">
+    <details class="vdp-accordion__item">
+      <summary class="vdp-accordion__trigger">curl</summary>
+      <div class="vdp-accordion__panel">
+        <code class="vdp-code-block">curl -H "Authorization: Token {{ user|get_api_authtoken }}" \
+  "{{ api_sample_url }}"</code>
+      </div>
+    </details>
+
+    <details class="vdp-accordion__item">
+      <summary class="vdp-accordion__trigger">httpie</summary>
+      <div class="vdp-accordion__panel">
+        <code class="vdp-code-block">http "{{ api_endpoint }}" \
+  webproviders==available domains==all \
+  "Authorization: Token {{ user|get_api_authtoken }}"</code>
+        <figure class="vdp-info-screenshot">
+          <img
+            src="{% static 'images/httpie.png' %}"
+            alt="httpie terminal example with Authorization header and query parameters"
+            loading="lazy"
+            width="960"
+            height="540"
+          />
+          <figcaption>Example httpie request and JSON response.</figcaption>
+        </figure>
+      </div>
+    </details>
+
+    <details class="vdp-accordion__item">
+      <summary class="vdp-accordion__trigger">Postman</summary>
+      <div class="vdp-accordion__panel">
+        <ol class="vdp-info-list">
+          <li>Method: <code class="vdp-code-inline">GET</code></li>
+          <li>URL: paste <code class="vdp-code-inline">{{ api_sample_url }}</code></li>
+          <li>
+            Headers tab -> add
+            <code class="vdp-code-inline">Authorization</code> =
+            <code class="vdp-code-inline">Token {{ user|get_api_authtoken }}</code>
+          </li>
+        </ol>
+        <figure class="vdp-info-screenshot">
+          <img
+            src="{% static 'images/postman.png' %}"
+            alt="Postman GET request with Authorization header and query parameters"
+            loading="lazy"
+            width="960"
+            height="540"
+          />
+          <figcaption>Example Postman setup for the scraped-items endpoint.</figcaption>
+        </figure>
+      </div>
+    </details>
+  </div>
+</div>
+{% endblock content %}

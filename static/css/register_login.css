@@ -90,7 +90,9 @@ button.close {
   -webkit-box-align: center;
 }
 
-form {
+/* Scoped to legacy auth templates — unscoped form{} broke /login/ vdp-auth-card layout */
+.login-content form,
+.register-container form {
   width: 25rem;
   overflow: auto;
   padding: 2.5rem;
@@ -306,10 +308,6 @@ a:hover {
     margin: 1.5rem 0;
     transition: all 200ms ease-in-out;
   }
-
-  .img img {
-    width: 400px;
-  }
 }
 
 @media screen and (max-width: 900px) {
@@ -318,18 +316,10 @@ a:hover {
     grid-template-columns: 1fr;
   }
 
-  .img {
-    display: none;
-  }
-
   .login-content img {
     height: 70px;
     margin: 1.5rem;
     transition: all 200ms ease-in-out;
-  }
-
-  .wave {
-    display: none;
   }
 
   .login-content {
@@ -358,26 +348,5 @@ a:hover {
   100% {
     opacity: 1;
     transform: translateY(1.5rem);
-  }
-}
-
-@-webkit-keyframes scale-up-center {
-  0% {
-    -webkit-transform: scale(0.5);
-    transform: scale(0.5);
-  }
-  100% {
-    -webkit-transform: scale(1);
-    transform: scale(1);
-  }
-}
-@keyframes scale-up-center {
-  0% {
-    -webkit-transform: scale(0.5);
-    transform: scale(0.5);
-  }
-  100% {
-    -webkit-transform: scale(1);
-    transform: scale(1);
   }
 }

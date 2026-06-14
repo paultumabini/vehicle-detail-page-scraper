@@ -1,36 +1,47 @@
 import functools
-import heapq
 import re
-from datetime import datetime
 
-import django.http
 from django.http import HttpResponse
-from django.urls import register_converter
 
-from .models import Project
+from .models import TargetSite
+
+
+def entry_code_prefix(project_name):
+    """First five letters of a project name, uppercase (e.g. ``av-aim`` -> ``AVAIM``)."""
+    letters = re.sub(r'[^A-Za-z]', '', project_name or '')
+    return letters[:5].upper()
+
+
+def parse_entry_code_number(entry_code):
+    """Digits after the hyphen (e.g. ``AVAIM-244`` -> ``244``)."""
+    if not entry_code or '-' not in entry_code:
+        return None
+    suffix = entry_code.rsplit('-', 1)[-1]
+    return int(suffix) if suffix.isdigit() else None
+
+
+def format_entry_code(project_name, number):
+    """Build ``{PREFIX}-{NNN}`` (e.g. ``AVAIM-245``)."""
+    return f'{entry_code_prefix(project_name)}-{number:03d}'
 
 
 class ScrapeEntryCode:
     def get_scrape_entry_code(self, form):
         """
-        Build the next entry code for a project (e.g. `AIM001`).
+        Build the next entry code for a project (e.g. ``AVAIM-246``).
         """
-        project_all = Project.objects.all()
-        codes = []
-        max_num = 1
-        for p in project_all:
-            if form.instance.project.name == p.name:
-                for code in project_all.filter(name=form.instance.project.name).first().projects.all():
-                    take_int = re.findall(r'[A-Za-z]+|\d+', code.entry_code)[-1]
-                    codes.append(int(take_int))
+        project = form.instance.project
+        if not project or not project.name:
+            return ''
 
-        if codes:
-            max_num = heapq.nlargest(2, codes)[0] + 1
+        numbers = []
+        for site in TargetSite.objects.filter(project=project).exclude(entry_code=''):
+            num = parse_entry_code_number(site.entry_code)
+            if num is not None:
+                numbers.append(num)
 
-        proj = form.instance.project.name[:3].upper()
-        num = str(max_num).zfill(3)
-
-        return f'{proj}{num}'
+        next_num = max(numbers) + 1 if numbers else 1
+        return format_entry_code(project.name, next_num)
 
 
 def ajax_login_required(view_func):
@@ -44,25 +55,16 @@ def ajax_login_required(view_func):
     return wrapper
 
 
-class DateConverter:
-    regex = '\d{4}-\d{1,2}-\d{1,2}'
+def set_sidebar_nav(context, *, section=None, project_name=None):
+    """
+    Mark the active sidebar item in base.html.
 
-    def to_python(self, value):
-        return datetime.strptime(value, '%Y-%m-%d').date()
+    IA split: Accounts (registry) vs Target Sites (scrape projects).
+    Call from each view's context; pairs with sidebar_projects from
+    project.context_processors.sidebar.
 
-    def to_url(self, value):
-        return value.strftime('%Y-%m-%d')
-
-
-register_converter(DateConverter, 'date')
-
-
-def sidebar_submenu_selected(context, project_name):
-    """Mutate context with active class for selected project submenu."""
-    selected = {
-        'aim-dealers': 'active-underline',
-        'vdp-urls': 'active-underline',
-        'others': 'active-underline',
-    }
-    key_name = re.sub('-', '_', project_name)
-    context[f'{key_name}_selected'] = selected.get(project_name)
+    section: dashboard | accounts | target_sites | api | help
+    project_name: Project.name slug when section is target_sites
+    """
+    context['sidebar_section'] = section
+    context['sidebar_project'] = project_name

@@ -1,39 +1,48 @@
-
 {% load static %}
-
-<!DOCTYPE html>
-<html>
+<!doctype html>
+<html lang="en">
   <head>
-    <title</title>
-    <link   rel="stylesheet"
-      href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css"
-      integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm"
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{% block title %}VDP Scraper{% endblock %}</title>
+
+    <!--
+    Auth shell — /login/, /register/, /logout/, /password-reset/*.
+    No app sidebar; shares Inter, FA6, and main.css vdp-auth-* tokens with project/base.html.
+
+    All auth pages extend this file directly (main.css + Alpine). register_login.css/js
+    are legacy and must not load here — their global form{} rule breaks vdp-auth-card.
+
+    Form pages include users/_auth_brand_mark.html (spider gradient; replaces profile_login.png).
+    Django {# #} must stay on one line (Django 6); use HTML comments in <head>.
+    -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
       crossorigin="anonymous"
     />
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
-    <link rel="stylesheet" type="text/css" href="{% static 'css/register_login.css' %}" />
-    <link href="https://fonts.googleapis.com/css?family=Poppins:600&display=swap" rel="stylesheet" />
-    <script src="https://kit.fontawesome.com/a81368914c.js"></script>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-  </head>
-  <body>
-   
-    {% block content %} {% endblock %}
+    <link rel="stylesheet" href="{% static 'css/main.css' %}" />
+    <!-- legacy_auth_css/js: unused — kept for backward compatibility if old templates extend base_legacy_auth.html -->
+    {% block legacy_auth_css %}{% endblock %}
+    <link rel="icon" type="image/png" sizes="32x32" href="{% static 'images/favicon-32.png' %}" />
 
-    <script src="https://code.jquery.com/jquery-3.2.1.min.js" ></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jqueryui/1.12.1/jquery-ui.min.js"></script>
+    {% block extra_head %}{% endblock %}
+  </head>
+  <body class="vdp-auth-body">
+    {% block content %}{% endblock %}
+
     <script
-      src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js"
-      integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q"
-      crossorigin="anonymous"
+      defer
+      src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"
     ></script>
-    <script
-      src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js"
-      integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl"
-      crossorigin="anonymous"
-    ></script>
-      <script type="text/javascript" src="{% static 'js/register_login.js' %}">       
-    </script>   
+    <!-- legacy_auth_js: unused — register/password pages use Alpine for password toggle -->
+    {% block legacy_auth_js %}{% endblock %}
+    {% block extra_js %}{% endblock %}
   </body>
 </html>

@@ -1,23 +1,21 @@
 """
-Sync AIM dealer account status from the external AIM Admin API into ``AimDealer``.
+AIM Admin API client — fetches dealer data and syncs it into ``Account``.
 
-Run as a management-style script (not imported by the web app):
+This module is a pure library; it has no ``__main__`` entry point.
+To run the sync, use the management command:
 
-    DJANGO_SETTINGS_MODULE=webscraping.settings python -m project.api.aimapi
+    python manage.py sync_accounts
 
 Environment:
 
-- ``AVAIM_EMAIL`` / ``AVAIM_PASS`` — API credentials (required to run).
+- ``AVAIM_EMAIL`` / ``AVAIM_PASS`` — API credentials (required).
 """
 
 from __future__ import annotations
 
 import logging
-import os
-import sys
-from pathlib import Path
+from typing import Any
 
-import django
 import requests
 
 logger = logging.getLogger(__name__)
@@ -25,16 +23,8 @@ logger = logging.getLogger(__name__)
 _REQUEST_TIMEOUT = (10, 60)
 
 
-def _bootstrap_django() -> None:
-    repo_webscraping = Path(__file__).resolve().parents[2]
-    if str(repo_webscraping) not in sys.path:
-        sys.path.insert(0, str(repo_webscraping))
-    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'webscraping.settings')
-    django.setup()
-
-
 class AimApiData:
-    """Thin client for AIM auth + dealer list; updates local ``AimDealer.account``."""
+    """Thin client for the AIM Admin API; syncs dealer rows into ``Account``."""
 
     _login_url = 'https://aim-admin.com/ncso_api/auth'
     _status_url = 'https://aim-admin.com/aim_system_api/get_data_for_dealers_page/'
@@ -60,7 +50,9 @@ class AimApiData:
         self._password = value
 
     @classmethod
-    def from_get_credentials(cls, email: str | None, password: str | None) -> AimApiData:
+    def from_get_credentials(
+        cls, email: str | None, password: str | None
+    ) -> AimApiData:
         return cls(email, password)
 
     @classmethod
@@ -107,57 +99,115 @@ class AimApiData:
 
         return status_payload[1].get('data')
 
+    @staticmethod
+    def _parse_int(value: Any) -> int | None:
+        """Convert a string or numeric value to int; return None on failure."""
+        if value is None:
+            return None
+        try:
+            return int(value)
+        except (ValueError, TypeError):
+            return None
+
+    @staticmethod
+    def _parse_bool(value: Any) -> bool | None:
+        """Convert a string/int flag (``'0'``/``'1'``) to bool; return None on failure."""
+        if value is None:
+            return None
+        try:
+            return bool(int(value))
+        except (ValueError, TypeError):
+            return None
+
+    @classmethod
+    def _clear_new_on_inactive_deleted(cls) -> int:
+        """Drop stale New badges — inactive/deleted dealers cannot be reviewed as new."""
+        from project.models import Account
+
+        return Account.objects.filter(
+            account_status__in=('INACTIVE', 'DELETED'),
+            is_new_account=True,
+        ).update(is_new_account=False)
+
     @classmethod
     def render_api_data(cls, aimdata: list | None) -> None:
+        from django.utils import timezone
+
+        from project.models import Account
+
         if not aimdata:
             logger.warning('No dealer rows from AIM API; skipping DB update.')
+            cleared_new = cls._clear_new_on_inactive_deleted()
+            if cleared_new:
+                logger.info(
+                    'Cleared is_new_account on %s inactive/deleted account(s).',
+                    cleared_new,
+                )
             return
 
-        from django.db.models import CharField
-        from django.db.models.functions import Cast
-
-        from project.models import AimDealer
-
         updated = 0
+        created_count = 0
+        skipped = 0
+
         for dealer in aimdata:
-            ext_id = dealer.get('id')
-            account = dealer.get('account')
-            if ext_id is None or account is None:
-                continue
-            try:
-                row = AimDealer.objects.annotate(
-                    id_str=Cast('dealer_id', output_field=CharField())
-                ).get(id_str=str(ext_id))
-            except AimDealer.DoesNotExist:
-                logger.debug('No local AimDealer for external id %s', ext_id)
-                continue
-            except AimDealer.MultipleObjectsReturned:
-                logger.warning('Multiple AimDealer rows for external id %s', ext_id)
+            ext_id = cls._parse_int(dealer.get('id'))
+            if ext_id is None:
+                skipped += 1
                 continue
 
-            if row.account != account:
-                row.account = account
-                row.save(update_fields=['account'])
+            account_status = dealer.get('account') or ''
+            field_values = {
+                'account_status': account_status,
+                'account_name': dealer.get('company_name'),
+                'city': dealer.get('city'),
+                'province': dealer.get('province'),
+                'new_active_stats': cls._parse_int(dealer.get('new_active_stats')),
+                'used_active_stats': cls._parse_int(dealer.get('used_active_stats')),
+                'new_rebated': cls._parse_int(dealer.get('new_rebated')),
+                'lease_count': cls._parse_int(dealer.get('lease_count')),
+                'auto_lease_on': cls._parse_bool(dealer.get('auto_lease_on')),
+                'facebook_feed': cls._parse_bool(dealer.get('facebook_feed')),
+                'av_360': cls._parse_bool(dealer.get('av_360')),
+            }
+            if account_status in ('INACTIVE', 'DELETED'):
+                field_values['is_new_account'] = False
+
+            synced_at = timezone.now()
+            # Only AIM sync sets this — account_form.html uses it vs date_modified.
+            field_values['aim_last_synced_at'] = synced_at
+
+            _, created = Account.objects.update_or_create(
+                account_id=ext_id,
+                defaults=field_values,
+                create_defaults={
+                    **field_values,
+                    'is_new_account': account_status not in ('INACTIVE', 'DELETED'),
+                },
+            )
+
+            if created:
+                created_count += 1
+            else:
                 updated += 1
 
-        logger.info(
-            'AIM account sync finished: updated %s dealers (total local: %s).',
-            updated,
-            AimDealer.objects.count(),
+        cleared_new = cls._clear_new_on_inactive_deleted()
+
+        from project.models import AccountSyncState
+
+        AccountSyncState.record_sync(
+            synced_at=timezone.now(),
+            accounts_created=created_count,
         )
 
-
-def main() -> None:
-    logging.basicConfig(level=logging.INFO, format='%(levelname)s %(message)s')
-    _bootstrap_django()
-
-    credential = AimApiData.from_get_credentials(
-        os.environ.get('AVAIM_EMAIL'),
-        os.environ.get('AVAIM_PASS'),
-    )
-    res_data = AimApiData.access_aim_api(**vars(credential))
-    AimApiData.render_api_data(res_data)
-
-
-if __name__ == '__main__':
-    main()
+        logger.info(
+            'AIM sync finished: %s created (new), %s updated, %s skipped (total local: %s).',
+            created_count,
+            updated,
+            skipped,
+            Account.objects.count(),
+        )
+        if cleared_new:
+            logger.info(
+                'Cleared is_new_account on %s inactive/deleted account(s).',
+                cleared_new,
+            )

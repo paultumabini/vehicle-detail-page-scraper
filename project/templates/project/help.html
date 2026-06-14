@@ -1,143 +1,135 @@
-{% extends 'project/base.html'%}
+{% extends 'project/base.html' %}
 
-{% block title %}  Scrape Bucket - {{ request.resolver_match.url_name | title }} {% endblock %}
+{% block title %}VDP Scraper | Help{% endblock %}
+{% block page_heading %}Help{% endblock %}
 
-{% block content %} 
-{% load custom_filters  %}
-    <section class=" mt-4 pt-3">  
-        <div align="left"  class="help-page">          
-            <h3  class="ml-2 help__header" > FAQ</h3> 
-            <div class="faq__wrapper">
-                <h5 class="mt-3 help__sec">Web scraping</h5>
-                <div>
-                    <ul class="list-unstyled components"> 
-                        <li>
-                            <a href="#qA1" data-toggle="collapse" aria-expanded="false" class="dropdown-toggle ">
-                                <span class="toggle-icon-control" aria-hidden="true">
-                                    <i class="toggle-icon fa fa-plus-square-o"></i>                                        
-                                    <span>How does web scraping work?</span>
-                                </span> 
-                            </a>
-                            <ul class="collapse list-unstyled" id="qA1">                              
-                                <li class="ml-3 mt-2 q-answer"> 
-                                   Web scraping works by deploying a bot or crawler that extracts content or data from a target website. 🤖
-                                </li>                                                         
-                            </ul>
-                        </li> 
-                    </ul>  
-                </div>
-                <div>
-                    <ul class="list-unstyled components"> 
-                        <li>
-                            <a href="#qA2" data-toggle="collapse" aria-expanded="false" class="dropdown-toggle ">
-                                <span class="toggle-icon-control" aria-hidden="true">
-                                    <i class="toggle-icon fa fa-plus-square-o"></i>                                   
-                                    <span>How long does it take to setup a crawler for a new web template?</span>
-                                </span> 
-                            </a>
-                            <ul class="collapse list-unstyled" id="qA2">                              
-                                <li class="ml-3 mt-2  q-answer">  
-                                    The crawler should be ready within 24hrs, which also depends on the amount of time spent during testing process.😉
-                                </li>                                                         
-                            </ul>
-                        </li> 
-                    </ul>  
-                </div> 
-                <div>
-                    <ul class="list-unstyled components"> 
-                        <li>
-                            <a href="#qA3" data-toggle="collapse" aria-expanded="false" class="dropdown-toggle ">
-                                <span class="toggle-icon-control" aria-hidden="true">
-                                    <i class="toggle-icon fa fa-plus-square-o"></i>                                   
-                                    <span>How long does it take to extract data?</span>
-                                </span> 
-                            </a>
-                            <ul class="collapse list-unstyled" id="qA3">                              
-                                <li class="ml-3 mt-2  q-answer">  
-                                   It depends on how the website's structure and size of the content to scrape. If it is a static website or scraping thru an api, it would usually take seconds to minutes to extract the data. However, it could take minutes to hours for dynamic websites. ⏳
-                                </li>                                                         
-                            </ul>
-                        </li> 
-                    </ul>  
-                </div> 
-                <div>
-                    <ul class="list-unstyled components"> 
-                        <li>
-                            <a href="#qA4" data-toggle="collapse" aria-expanded="false" class="dropdown-toggle ">
-                                <span class="toggle-icon-control" aria-hidden="true">
-                                    <i class="toggle-icon fa fa-plus-square-o"></i>                                   
-                                    <span>Does web scraping always work?</span>
-                                </span> 
-                            </a>
-                            <ul class="collapse list-unstyled" id="qA4">                              
-                                <li class="ml-3 mt-2  q-answer">  
-                                   Nope. Web scraping is a long, time-consuming challenging task. It might work today, but not tomorrow. For example, if the owner switches to a different web provider, it will certainly break the existing codes. Also, a highly secured bot/crawler blocker or scraping protection is a great challenge to bypass. 😢
-                                </li>                                                         
-                            </ul>
-                        </li> 
-                    </ul>  
-                </div> 
-                <h5 class="mt-4 help__sec">New scrape request</h5>
-                <div>
-                    <ul class="list-unstyled components"> 
-                        <li>
-                            <a href="#qA5" data-toggle="collapse" aria-expanded="false" class="dropdown-toggle ">
-                                <span class="toggle-icon-control" aria-hidden="true">
-                                    <i class="toggle-icon fa fa-plus-square-o"></i>                                        
-                                    <span>How to fill out the form?</span>
-                                </span> 
-                            </a>
-                            <ul class="collapse list-unstyled" id="qA5">   
-                               <ol>                           
-                                <li class="ml-3 mt-2 q-answer"> 
-                                   All fields are required. ✔
-                                </li>
-                                <li class="ml-3 mt-2 q-answer"> 
-                                    The domain name must be unique. The system will allow you to submit with an existing duplicate  <i>domain</i> name. It must be also a one word string. In case you encounter a domain that contains a hypen or dash (e.g <i>https://www.car-dealer.com/</i> ), just remove it (<i>cardealer</i>) 
-                                 </li>  
-                               </ol>                                                         
-                            </ul>
-                        </li> 
-                    </ul>  
-                </div>
-                <h5 class="mt-4 help__sec">Others</h5>
-                <div>
-                    <ul class="list-unstyled components"> 
-                        <li>
-                            <a href="#qA6" data-toggle="collapse" aria-expanded="false" class="dropdown-toggle ">
-                                <span class="toggle-icon-control" aria-hidden="true">
-                                    <i class="toggle-icon fa fa-plus-square-o"></i>                                        
-                                    <span>Reminders</span>
-                                </span> 
-                            </a>
-                            <ul class="collapse list-unstyled" id="qA6">   
-                               <ul style="list-style-type:disc">                                                    
-                                <li class="ml-4 mt-2 q-answer"> 
-                                   Sometimes, you may see the <b>Last Run</b> of the target site is on <i>"running...</i>" status. Please allow the app to complete the process before downloading a file.
-                                </li>                                
-                              </ul>                                                         
-                            </ul>
-                        </li> 
-                    </ul>  
-                </div>
-                <div>
-                    <ul class="list-unstyled components"> 
-                        <li>
-                            <a href="#qA7" data-toggle="collapse" aria-expanded="false" class="dropdown-toggle ">
-                                <span class="toggle-icon-control" aria-hidden="true">
-                                    <i class="toggle-icon fa fa-plus-square-o"></i>                                   
-                                    <span>Still need help?</span>
-                                </span> 
-                            </a>
-                            <ul class="collapse list-unstyled" id="qA7">                              
-                                <li class="ml-3 mt-2  q-answer">  
-                                   Please feel free to reach out to me via email: <a  href="mailto:paultumabini@gmail.com" target="_blank" style="padding-left:0!important">paultumabini@gmail.com </a>
-                                </li>                                                         
-                            </ul>
-                        </li> 
-                    </ul>  
-                </div>                 
-            </div>
-        </div> 
-    </section>
-{% endblock content%}
+{% block content %}
+<!--
+  /help/ — views.help.
+
+  Operator FAQ. Same accordion pattern as api_docs.html (.vdp-info-card / .vdp-accordion).
+  Replaced legacy Bootstrap collapse toggles from the base.html theme migration.
+-->
+<div class="vdp-page-header">
+  <h4>Help &amp; FAQ</h4>
+  <p>Common questions about scraping, submitting targets, and day-to-day operation.</p>
+</div>
+
+<div class="vdp-card vdp-info-card">
+  <h5 class="vdp-info-section-title">Web scraping</h5>
+  <div class="vdp-accordion">
+    <details class="vdp-accordion__item">
+      <summary class="vdp-accordion__trigger">How does web scraping work?</summary>
+      <div class="vdp-accordion__panel">
+        <p class="mb-0">
+          A scheduled spider (crawler) visits each target site, extracts vehicle
+          listing fields you selected on the scrape form, and stores the results for
+          export and API access.
+        </p>
+      </div>
+    </details>
+
+    <details class="vdp-accordion__item">
+      <summary class="vdp-accordion__trigger">How long does a new crawler take to set up?</summary>
+      <div class="vdp-accordion__panel">
+        <p class="mb-0">
+          Most new web templates are ready within 24 hours, depending on site
+          complexity and how much testing the provider layout needs.
+        </p>
+      </div>
+    </details>
+
+    <details class="vdp-accordion__item">
+      <summary class="vdp-accordion__trigger">How long does a scrape run take?</summary>
+      <div class="vdp-accordion__panel">
+        <p class="mb-0">
+          Static sites or provider APIs usually finish in seconds to a few minutes.
+          Dynamic sites that need a browser (Selenium/Playwright) can take minutes
+          to hours depending on inventory size.
+        </p>
+      </div>
+    </details>
+
+    <details class="vdp-accordion__item">
+      <summary class="vdp-accordion__trigger">Does scraping always work?</summary>
+      <div class="vdp-accordion__panel">
+        <p class="mb-0">
+          No. Dealer sites change providers, redesign layouts, or add bot protection.
+          A spider that worked yesterday may need maintenance after a site update.
+          Check <strong>Last Run</strong> on the target site and open a support
+          request if exports stop updating.
+        </p>
+      </div>
+    </details>
+  </div>
+</div>
+
+<div class="vdp-card vdp-info-card">
+  <h5 class="vdp-info-section-title">New scrape request</h5>
+  <div class="vdp-accordion">
+    <details class="vdp-accordion__item">
+      <summary class="vdp-accordion__trigger">How do I fill out the form?</summary>
+      <div class="vdp-accordion__panel">
+        <ul class="vdp-info-list mb-0">
+          <li>
+            <strong>Account &amp; URL</strong> — pick the dealership account and
+            paste the live VDP listing URL.
+          </li>
+          <li>
+            <strong>Domain name</strong> — a unique, single-word
+            <code class="vdp-code-inline">site_id</code> (primary key). Duplicates
+            are rejected. For URLs like <code class="vdp-code-inline">car-dealer.com</code>,
+            use a compact slug such as <code class="vdp-code-inline">cardealer</code>
+            (no spaces or hyphens).
+          </li>
+          <li>
+            <strong>Web provider</strong> — choose from the list or type a new
+            provider name; it is created automatically on submit.
+          </li>
+          <li>
+            <strong>Fields to scrape</strong> — check the inventory columns you need;
+            use <em>All</em> / <em>None</em> on the toolbar to toggle quickly.
+          </li>
+        </ul>
+      </div>
+    </details>
+  </div>
+</div>
+
+<div class="vdp-card vdp-info-card">
+  <h5 class="vdp-info-section-title">Operations</h5>
+  <div class="vdp-accordion">
+    <details class="vdp-accordion__item">
+      <summary class="vdp-accordion__trigger">Last Run shows &ldquo;running&hellip;&rdquo;</summary>
+      <div class="vdp-accordion__panel">
+        <p class="mb-0">
+          A scrape is still in progress. Wait for the status to finish before
+          downloading CSV or relying on API data for that target.
+        </p>
+      </div>
+    </details>
+
+    <details class="vdp-accordion__item">
+      <summary class="vdp-accordion__trigger">API access</summary>
+      <div class="vdp-accordion__panel">
+        <p class="mb-0">
+          See the
+          <a href="{% url 'api-docs' %}" class="vdp-info-link">API documentation</a>
+          page for your token, endpoint URL, and example requests.
+        </p>
+      </div>
+    </details>
+
+    <details class="vdp-accordion__item">
+      <summary class="vdp-accordion__trigger">Still need help?</summary>
+      <div class="vdp-accordion__panel">
+        <p class="mb-0">
+          Email
+          <a href="mailto:paultumabini@gmail.com" class="vdp-info-link">paultumabini@gmail.com</a>
+          with the target site domain, web provider, and a short description of the issue.
+        </p>
+      </div>
+    </details>
+  </div>
+</div>
+{% endblock content %}

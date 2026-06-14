@@ -1,0 +1,165 @@
+{% extends 'project/base.html' %}
+{% load tz %}
+
+{#
+  Account edit page (AccountUpdateView).
+
+  Read-only header uses Account.is_aim_synced (aim_last_synced_at):
+    - AIM row  → "From AIM sync" + Last synced + inventory stats
+    - Local row → "Account details" + Created / Last updated (manual/admin add)
+#}
+
+{% block title %}VDP Scraper | Edit Account{% endblock %}
+{% block page_heading %}Edit Account{% endblock %}
+
+{% block content %}
+<div class="vdp-page-header">
+  <h4>Edit Account</h4>
+  <p>
+    {% if object.is_aim_synced %}
+    Update operator-managed fields. ID, status, and inventory stats sync from AIM Admin.
+    {% else %}
+    This account was added locally and is not linked to AIM Admin sync yet.
+    {% endif %}
+  </p>
+</div>
+
+<div class="vdp-card max-w-2xl">
+  <section class="vdp-account-readonly" aria-labelledby="account-details-heading">
+    <h5 id="account-details-heading" class="vdp-scrape-form__section-title">
+      {% if object.is_aim_synced %}From AIM sync{% else %}Account details{% endif %}
+    </h5>
+    <dl class="vdp-account-meta">
+      <div>
+        <dt>Account ID</dt>
+        <dd><code class="vdp-account-id">{{ object.account_id }}</code></dd>
+      </div>
+      <div>
+        <dt>Account name</dt>
+        <dd>{{ object.account_name|default:"—" }}</dd>
+      </div>
+      <div>
+        <dt>Status</dt>
+        <dd>{{ object.account_status|capfirst }}</dd>
+      </div>
+      <div>
+        <dt>Location</dt>
+        <dd>
+          {% if object.city or object.province %}
+          {{ object.city|default:"" }}{% if object.city and object.province %}, {% endif %}{{ object.province|default:"" }}
+          {% else %}
+          —
+          {% endif %}
+        </dd>
+      </div>
+      {% if object.is_aim_synced %}
+      {# Inventory + Last synced — only meaningful for AIM-fed accounts #}
+      <div>
+        <dt>New active</dt>
+        <dd>{{ object.new_active_stats|default:"—" }}</dd>
+      </div>
+      <div>
+        <dt>Used active</dt>
+        <dd>{{ object.used_active_stats|default:"—" }}</dd>
+      </div>
+      <div>
+        <dt>Last synced</dt>
+        <dd>{{ object.aim_last_synced_at|timezone:'US/Eastern'|date:'Y-m-d H:i' }}</dd>
+      </div>
+      {% else %}
+      {# Locally added account — date_modified is edit time, not AIM sync #}
+      <div>
+        <dt>Created</dt>
+        <dd>
+          {% if object.date_created %}
+          {{ object.date_created|timezone:'US/Eastern'|date:'Y-m-d H:i' }}
+          {% else %}
+          —
+          {% endif %}
+        </dd>
+      </div>
+      {% if object.author %}
+      <div>
+        <dt>Created by</dt>
+        <dd>{{ object.author.get_username }}</dd>
+      </div>
+      {% endif %}
+      <div>
+        <dt>Last updated</dt>
+        <dd>
+          {% if object.date_modified %}
+          {{ object.date_modified|timezone:'US/Eastern'|date:'Y-m-d H:i' }}
+          {% else %}
+          —
+          {% endif %}
+        </dd>
+      </div>
+      {% endif %}
+    </dl>
+  </section>
+
+  <form method="post" novalidate class="vdp-account-form space-y-4">
+    {% csrf_token %}
+
+    {% if form.non_field_errors %}
+    <div class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+      {{ form.non_field_errors }}
+    </div>
+    {% endif %}
+
+    <h5 class="vdp-scrape-form__section-title">Editable fields</h5>
+
+    <div>
+      <label for="{{ form.web_provider.id_for_label }}" class="vdp-label">{{ form.web_provider.label }}</label>
+      {{ form.web_provider }}
+      {% if form.web_provider.help_text %}
+      <p class="vdp-help">{{ form.web_provider.help_text }}</p>
+      {% endif %}
+      {% if form.web_provider.errors %}
+      <p class="vdp-error">{{ form.web_provider.errors|join:', ' }}</p>
+      {% endif %}
+    </div>
+
+    <div>
+      <label for="{{ form.account_manager.id_for_label }}" class="vdp-label">{{ form.account_manager.label }}</label>
+      {{ form.account_manager }}
+      {% if form.account_manager.errors %}
+      <p class="vdp-error">{{ form.account_manager.errors|join:', ' }}</p>
+      {% endif %}
+    </div>
+
+    <div>
+      <label for="{{ form.site_url.id_for_label }}" class="vdp-label">{{ form.site_url.label }}</label>
+      {{ form.site_url }}
+      {% if form.site_url.help_text %}
+      <p class="vdp-help">{{ form.site_url.help_text }}</p>
+      {% endif %}
+      {% if form.site_url.errors %}
+      <p class="vdp-error">{{ form.site_url.errors|join:', ' }}</p>
+      {% endif %}
+    </div>
+
+    <div>
+      <label for="{{ form.note.id_for_label }}" class="vdp-label">{{ form.note.label }}</label>
+      {{ form.note }}
+      {% if form.note.errors %}
+      <p class="vdp-error">{{ form.note.errors|join:', ' }}</p>
+      {% endif %}
+    </div>
+
+    <div class="flex items-center gap-3 pt-2">
+      <button
+        type="submit"
+        class="inline-flex items-center gap-1.5 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold rounded-lg shadow-sm transition-colors"
+      >
+        <i class="fa fa-check text-xs"></i>
+        Save account
+      </button>
+      <a
+        href="{% url 'accounts' %}"
+        class="text-sm text-slate-500 hover:text-slate-800 no-underline"
+      >Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

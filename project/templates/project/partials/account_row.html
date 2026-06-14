@@ -1,0 +1,146 @@
+{% load tz %}
+<!--
+  Partial template — renders ONE <tr> for the Accounts table.
+
+  Used by:
+    accounts.html (server-side AJAX)
+    account_clear_new view (htmx)
+
+  Use main.css classes only — rows are injected via AJAX (Tailwind CDN skips dynamic HTML).
+
+  Column order must match accounts.html thead and views.accounts_datatable_json order_fields.
+-->
+<tr id="account-row-{{ account.account_id }}">
+  <td class="vdp-nowrap">
+    <code class="vdp-account-id">{{ account.account_id }}</code>
+  </td>
+
+  {# Column 1 — account name; hidden "new" text powers the New Accounts filter #}
+  <td>
+    <div class="vdp-account-name-cell">
+      <span class="vdp-cell-name">{{ account.account_name|default:"—" }}</span>
+      {% if account.is_new_account %}
+      <span class="dt-val vdp-sr-only">new</span>
+      <span class="badge-new" id="new-badge-{{ account.account_id }}" title="New account">
+        <i class="fa fa-star" aria-hidden="true"></i> New
+      </span>
+      {% endif %}
+    </div>
+  </td>
+
+  <td>
+    {% if account.city or account.province %}
+    <span class="vdp-cell-sub">
+      {{ account.city|default:"" }}{% if account.city and account.province %}, {% endif %}{{ account.province|default:"" }}
+    </span>
+    {% else %}
+    <span class="vdp-cell-muted">—</span>
+    {% endif %}
+  </td>
+
+  <td>
+    <span class="dt-val vdp-sr-only">{{ account.account_status }}</span>
+    <span class="status-badge status-{{ account.account_status|lower }}-account">
+      {{ account.account_status|capfirst }}
+    </span>
+  </td>
+
+  {# Scraping — one TargetSite per account; icon-only when configured, muted text when not #}
+  <td>
+    <span class="dt-val vdp-sr-only">
+      {% if account.total_sites > 0 %}configured{% else %}not-configured{% endif %}
+    </span>
+    {% if account.total_sites > 0 %}
+    <span class="vdp-scrape-yes" title="Scraping configured">
+      <i class="fa fa-circle-check" aria-hidden="true"></i>
+      <span class="vdp-sr-only">Configured</span>
+    </span>
+    {% else %}
+    <span class="vdp-cell-muted vdp-scrape-empty" title="Scraping not configured">
+      <i class="fa fa-minus" aria-hidden="true"></i> Not set up
+    </span>
+    {% endif %}
+  </td>
+
+  {# Inventory stats (sync_accounts → Account.new_active_stats / used_active_stats) #}
+  <td class="vdp-nowrap vdp-stat-cell">
+    {% if account.new_active_stats is not None %}
+    <span class="vdp-stat-num">{{ account.new_active_stats }}</span>
+    {% else %}
+    <span class="vdp-cell-muted">—</span>
+    {% endif %}
+  </td>
+
+  <td class="vdp-nowrap vdp-stat-cell">
+    {% if account.used_active_stats is not None %}
+    <span class="vdp-stat-num">{{ account.used_active_stats }}</span>
+    {% else %}
+    <span class="vdp-cell-muted">—</span>
+    {% endif %}
+  </td>
+
+  <td>
+    {% if account.facebook_feed is True %}
+    <span class="vdp-flag vdp-flag--on">On</span>
+    {% elif account.facebook_feed is False %}
+    <span class="vdp-flag vdp-flag--off">Off</span>
+    {% else %}
+    <span class="vdp-cell-muted">—</span>
+    {% endif %}
+  </td>
+
+  <td class="vdp-nowrap">
+    <span class="vdp-cell-date">
+      {{ account.date_modified|timezone:'US/Eastern'|date:'Y-m-d' }}
+    </span>
+  </td>
+
+  <td class="vdp-table-actions-cell">
+    <div class="vdp-table-actions">
+      {% if account.total_sites > 0 and account.primary_site_id %}
+      <a
+        href="{% url 'site-detail' account.primary_site_project|default:default_project_slug account.primary_site_id %}"
+        class="vdp-table-action vdp-table-action--view"
+        title="View target site"
+        aria-label="View target site for {{ account.account_name|default:account.account_id }}"
+      >
+        <i class="fa fa-eye" aria-hidden="true"></i>
+      </a>
+      {% elif account.total_sites == 0 %}
+      <a
+        href="{% url 'new-scrape' %}?account={{ account.account_id }}"
+        class="vdp-table-action vdp-table-action--add"
+        title="Add scraping target for {{ account.account_name|default:account.account_id }}"
+        aria-label="Add scraping target for {{ account.account_name|default:account.account_id }}"
+      >
+        <i class="fa fa-plus" aria-hidden="true"></i>
+      </a>
+      {% endif %}
+      {% if request.user.is_staff %}
+      {# In-app edit — staff only; see AccountUpdateView #}
+      <a
+        href="{% url 'account-edit' account.account_id %}"
+        class="vdp-table-action vdp-table-action--edit"
+        title="Edit account"
+        aria-label="Edit {{ account.account_name|default:account.account_id }}"
+      >
+        <i class="fa fa-pen-to-square" aria-hidden="true"></i>
+      </a>
+      {% endif %}
+      {% if account.is_new_account %}
+      <button
+        type="button"
+        hx-post="{% url 'account-clear-new' account.account_id %}"
+        hx-swap="none"
+        hx-on::after-request="window.accountsTable?.reload?.()"
+        hx-confirm="Mark this account as reviewed?"
+        class="vdp-table-action vdp-table-action--review"
+        title="Mark as reviewed"
+        aria-label="Mark {{ account.account_name|default:account.account_id }} as reviewed"
+      >
+        <i class="fa fa-circle-check" aria-hidden="true"></i>
+      </button>
+      {% endif %}
+    </div>
+  </td>
+</tr>

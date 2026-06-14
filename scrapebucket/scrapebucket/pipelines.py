@@ -202,6 +202,11 @@ class VdpUrlFtpExportPipeline:
             ftp.login(user, password)
             # STOR uploads in binary mode; payload is UTF-8-encoded CSV bytes.
             ftp.storbinary(f'STOR {remote}', payload)
+            # Mirror the uploaded filename on TargetSite so admin can show the last
+            # export without querying FTP. Only updated after a successful STOR;
+            # failed uploads leave the previous value (or null) unchanged.
+            target.exported_feed = remote
+            target.save(update_fields=['exported_feed'])
             logger.info('VdpUrlFtpExportPipeline: uploaded %s', remote)
         except (OSError, error_perm) as exc:
             logger.error('VdpUrlFtpExportPipeline: FTP upload failed: %s', exc)

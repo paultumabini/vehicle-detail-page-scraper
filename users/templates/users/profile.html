@@ -1,61 +1,116 @@
-{% extends "project/base.html"  %} 
-{% load crispy_forms_tags %}
-{% block content %}  
-    <div class="profile-wrapper">
-        <div class="profile-cover">            
-        </div>
-        <div class="profile-content-section display-image">
-            <form method="POST" enctype="multipart/form-data">     
-                {% csrf_token %}       
-                <div id="display-image">                
-                    <img class="account-img" src="{{ user.profile.image.url }}" id="preview-image">
-                    <div class="image-icon-wrapper">
-                        <span class="image-icon" for="id_image"> <label for="id_image" class="fa fa-camera"></label> </span>
-                        {{ profile_form.image }}
-                    </div>  
-                    <div class="media-body">                        
-                        <h3 class="account-heading">{{ user.username|title }}</h3>
-                        <p class="text-secondary">{{ user.email }}</p>
-                    </div>
-                </div>
-                 <div class="profile mr-4 ml-4">
-                        <fieldset >
-                            <legend class=" profile-info">Profile Info</legend> 
-                            <div class="form-group profile-content" >
-                                <div class="form-group profile col-md-5">
-                                    <label for="exampleInputEmail1">Username</label>
-                                    <input type="text" class="form-control form-control-sm text-muted" name="username" id="id_username" value="{{ user.username }}" required>
-                                </div>
-                                <div class="form-group  profile col-md-5">
-                                    <label for="exampleInputPassword1">Email</label>
-                                    <input type="email" class="form-control  form-control-sm text-muted" name="email" id="id_email" value="{{ user.email }}" required>  
-                                </div>   
-                            </div>                 
-                        </fieldset>
-                        <div class="form-group">
-                            <button class="btn btn-success btn-sm" type="submit">Update</button>
-                        </div>
-                 </div>
-            </form>
-        </div>
-    </div> 
+{% extends 'project/base.html' %}
 
-    <script>
-        const inputImage = document.querySelector('#id_image');
-        const displayImage = document.querySelector('#display-image');
-        const previewImage = displayImage.querySelector('#preview-image');
-       
-        inputImage.addEventListener('change', function() {
-            const file = this.files[0];           
-            if (file) {
-                const reader = new FileReader();               
-                reader.addEventListener('load', function(){                    
-                   previewImage.setAttribute('src', this.result)
-                })
-                reader.readAsDataURL(file)
-            }           
-        })
-        
-        
-    </script>
+{% block title %}VDP Scraper | Profile{% endblock %}
+{% block page_heading %}Profile{% endblock %}
+
+{% block content %}
+<!--
+  /profile/ — views.profile.
+
+  Replaces legacy Bootstrap profile-wrapper layout with vdp-profile-* (main.css).
+  user_form + profile_form drive fields (do not hardcode inputs — email needs vdp-input
+  from Meta.widgets in UserUpdateForm).
+
+  testuser (DEMO_READ_ONLY_USERNAME): read-only banner, disabled fieldset, no save btn.
+  Avatar preview script lives in the js block below (not inline onchange in markup).
+-->
+<div class="vdp-page-header">
+  <h4>Your profile</h4>
+  <p>Update your display name, email, and avatar.</p>
+</div>
+
+{% if is_read_only %}
+<div class="vdp-auth-flash vdp-auth-flash--warning mb-4" role="status">
+  <i class="fa fa-triangle-exclamation" aria-hidden="true"></i>
+  <span>This demo account is read-only. Profile changes are not allowed.</span>
+</div>
+{% endif %}
+
+<div class="vdp-card vdp-profile-card">
+  <form
+    method="post"
+    enctype="multipart/form-data"
+    class="vdp-profile-form"
+    novalidate
+  >
+    {% csrf_token %}
+
+    <div class="vdp-profile-header">
+      <div class="vdp-profile-avatar" id="profile-avatar">
+        <img
+          src="{{ user.profile.image.url }}"
+          alt="{{ user.username }} avatar"
+          id="profile-preview-image"
+          width="96"
+          height="96"
+        />
+        {% if not is_read_only %}
+        <label for="{{ profile_form.image.id_for_label }}" class="vdp-profile-avatar-btn" title="Change photo">
+          <i class="fa fa-camera" aria-hidden="true"></i>
+          <span class="vdp-sr-only">Change profile photo</span>
+        </label>
+        {{ profile_form.image }}
+        {% endif %}
+      </div>
+      <div class="vdp-profile-meta">
+        <h5 class="vdp-profile-name">{{ user.username }}</h5>
+        <p class="vdp-profile-email">{{ user.email }}</p>
+      </div>
+    </div>
+
+    {% if profile_form.image.errors %}
+    <p class="vdp-error">{{ profile_form.image.errors|join:', ' }}</p>
+    {% endif %}
+
+    <div class="vdp-profile-fields">
+      <fieldset {% if is_read_only %}disabled{% endif %} class="vdp-profile-fieldset">
+        <div>
+          <label for="{{ user_form.username.id_for_label }}" class="vdp-label">Username</label>
+          {{ user_form.username }}
+          {% if user_form.username.errors %}
+          <p class="vdp-error">{{ user_form.username.errors|join:', ' }}</p>
+          {% endif %}
+        </div>
+
+        <div>
+          <label for="{{ user_form.email.id_for_label }}" class="vdp-label">Email</label>
+          {{ user_form.email }}
+          {% if user_form.email.errors %}
+          <p class="vdp-error">{{ user_form.email.errors|join:', ' }}</p>
+          {% endif %}
+        </div>
+      </fieldset>
+    </div>
+
+    {% if not is_read_only %}
+    <div class="vdp-profile-actions">
+      <button type="submit" class="vdp-profile-submit">
+        <i class="fa fa-check text-xs" aria-hidden="true"></i>
+        Save changes
+      </button>
+    </div>
+    {% endif %}
+  </form>
+</div>
 {% endblock content %}
+
+{% block js %}
+<!-- Live avatar preview before POST — FileReader updates #profile-preview-image -->
+<script>
+  (function () {
+    var input = document.getElementById('{{ profile_form.image.id_for_label }}');
+    var preview = document.getElementById('profile-preview-image');
+    if (!input || !preview) return;
+
+    input.addEventListener('change', function () {
+      var file = this.files && this.files[0];
+      if (!file) return;
+      var reader = new FileReader();
+      reader.addEventListener('load', function () {
+        preview.src = reader.result;
+      });
+      reader.readAsDataURL(file);
+    });
+  })();
+</script>
+{% endblock js %}

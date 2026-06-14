@@ -1,0 +1,16 @@
+{% extends 'users/base_user.html' %}
+{% load static %}
+
+{#
+  Deprecated intermediate base — no auth template extends this file anymore.
+
+  register_login.css/js targeted the old Bootstrap auth layout. All auth pages
+  now extend base_user.html directly and use vdp-auth-* from main.css + Alpine.
+#}
+{% block legacy_auth_css %}
+<link rel="stylesheet" href="{% static 'css/register_login.css' %}" />
+{% endblock %}
+
+{% block legacy_auth_js %}
+<script defer src="{% static 'js/register_login.js' %}"></script>
+{% endblock %}

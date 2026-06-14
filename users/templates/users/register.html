@@ -1,80 +1,135 @@
+{% extends 'users/base_user.html' %}
 
-{% extends "users/base_user.html" %}
-{% load static %}
+{% block title %}VDP Scraper | Sign up{% endblock %}
+
 {% block content %}
-<!-- Custom Error Message -->   
-    <div class="register-container">   
-        <div class="error-msg-box ">           
-            {% if  form.errors %}
-                <div class="alert alert-danger text-center error-msg">
-                 <i class="fa fa-exclamation-circle" ></i> 
-                 <button type="button" class="close" data-dismiss="alert" aria-label="Close">
-                    <span aria-hidden="true">&times;</span>
-                  </button>                   
-                    <div class="messages"> {{ form.username.errors|striptags }}</div>
-                    <div class="messages"> {{ form.email.errors |striptags }}</div>
-                    <div class="messages"> {{ form.password2.errors |striptags }}</div>
-                    <!-- {% for _, error in form.errors.items %}
-                           <div class="error-messages"> {{ error|striptags }}</div>
-                         {% endfor %}  -->
-              </div>    
-            {% endif %}
-                        
-         </div>  
-      <div class="login-content">
-        <form method="POST" class="form-group">
-         {% csrf_token %}  
-          <img src=" {% static 'images/resume.png' %}" />
-          <h2 class="title">Create your Account</h2>
-          <div class="input-div one">
-            <div class="i">
-              <i class="fa fa-user"></i>
-            </div>
-            <div class="div">
-              <h5>{{ form.username.label }}</h5>
-              <input type="text" class="input" name="username" required />             
-            </div>
-          </div>
-          <div class="input-div one">
-            <div class="i">
-              <i class="fa fa-envelope"></i>
-            </div>
-            <div class="div">
-              <h5>{{ form.email.label }}</h5>
-              <input type="text" class="input" name="email" required />
-            </div>
-          </div>
-          <div class="input-div pass">           
-            <div class="i">                 
-              <i class="fa fa-lock"></i>
-            </div>
-            <div class="div">                
-              <h5>{{ form.password1.label }}</h5>               
-              <input type="password" class="input input-password" name="password1" required />                          
-            </div>
-          </div>
-          <div class="input-div pass">
-            <div class="i">
-              <i class="fa fa-lock"></i>
-            </div>
-            <div class="div">
-              <h5>{{ form.password2.label }}</h5>
-              <input type="password" class="input input-password"  name="password2" required />              
-            </div>
-          </div>  
-          <div class= "text-password">
-            <input type="checkbox" id="show-pass" name="show-pass" >
-            <label for="show-pass" ><small>Show password</small></label>
-          </div>                
-          <input type="submit" class="btn" value="Sign Up" />            
-          <div class="border-top sign-up">
-            <small class="text-muted">
-              Already have an account? <a href="{% url 'login' %}" class="">Sign In</a>
-            </small>
-          </div>
-           
-        </form>        
+<!--
+  /register/ — views.register (UserRegisterForm).
+
+  Same vdp-auth-* layout as /login/ (main.css + Alpine password toggle).
+  Brand mark: _auth_brand_mark.html (sidebar spider + gradient).
+
+  Icons align with /login/: fa-user, fa-envelope, fa-lock; fa-repeat on confirm.
+  On success, redirects to /login/ with a flash message (see views.register).
+-->
+<div class="vdp-auth-page">
+  <div class="vdp-auth-card" x-data="{ showPassword: false }">
+    <div class="vdp-auth-brand">
+      {# Spider gradient brand — users/_auth_brand_mark.html (replaces profile_login.png) #}
+      {% include 'users/_auth_brand_mark.html' %}
+      <h1 class="vdp-auth-title">Create your account</h1>
+      <p class="vdp-auth-subtitle">Join VDP Scraper to manage target sites and scrapes.</p>
+    </div>
+
+    {% if form.errors %}
+    <div class="vdp-auth-flash vdp-auth-flash--error" role="alert">
+      <i class="fa fa-circle-exclamation" aria-hidden="true"></i>
+      <span>
+        {% if form.non_field_errors %}
+          {{ form.non_field_errors|join:', ' }}
+        {% else %}
+          Please fix the highlighted fields below.
+        {% endif %}
+      </span>
+    </div>
+    {% endif %}
+
+    <form method="post" class="vdp-auth-form" novalidate>
+      {% csrf_token %}
+
+      <div class="vdp-auth-field">
+        <label for="id_username" class="vdp-label">{{ form.username.label }}</label>
+        <div class="vdp-auth-input-wrap">
+          <i class="fa fa-user vdp-auth-input-icon" aria-hidden="true"></i>
+          <input
+            type="text"
+            name="username"
+            id="id_username"
+            class="vdp-auth-input"
+            autocomplete="username"
+            required
+            autofocus
+            {% if form.username.value %}value="{{ form.username.value }}"{% endif %}
+          />
+        </div>
+        {% if form.username.errors %}
+        <p class="vdp-error">{{ form.username.errors|join:', ' }}</p>
+        {% endif %}
       </div>
-    </div>  
+
+      <div class="vdp-auth-field">
+        <label for="id_email" class="vdp-label">{{ form.email.label }}</label>
+        <div class="vdp-auth-input-wrap">
+          <i class="fa fa-envelope vdp-auth-input-icon" aria-hidden="true"></i>
+          <input
+            type="email"
+            name="email"
+            id="id_email"
+            class="vdp-auth-input"
+            autocomplete="email"
+            required
+            {% if form.email.value %}value="{{ form.email.value }}"{% endif %}
+          />
+        </div>
+        {% if form.email.errors %}
+        <p class="vdp-error">{{ form.email.errors|join:', ' }}</p>
+        {% endif %}
+      </div>
+
+      <div class="vdp-auth-field">
+        <label for="id_password1" class="vdp-label">{{ form.password1.label }}</label>
+        <div class="vdp-auth-input-wrap">
+          <i class="fa fa-lock vdp-auth-input-icon" aria-hidden="true"></i>
+          <input
+            type="password"
+            x-bind:type="showPassword ? 'text' : 'password'"
+            name="password1"
+            id="id_password1"
+            class="vdp-auth-input vdp-auth-input--password"
+            autocomplete="new-password"
+            required
+          />
+          <button
+            type="button"
+            class="vdp-auth-password-toggle"
+            @click="showPassword = !showPassword"
+            :aria-label="showPassword ? 'Hide passwords' : 'Show passwords'"
+            :title="showPassword ? 'Hide passwords' : 'Show passwords'"
+          >
+            <i class="fa" :class="showPassword ? 'fa-eye-slash' : 'fa-eye'" aria-hidden="true"></i>
+          </button>
+        </div>
+        {% if form.password1.errors %}
+        <p class="vdp-error">{{ form.password1.errors|join:', ' }}</p>
+        {% endif %}
+      </div>
+
+      <div class="vdp-auth-field">
+        <label for="id_password2" class="vdp-label">{{ form.password2.label }}</label>
+        <div class="vdp-auth-input-wrap">
+          <i class="fa fa-repeat vdp-auth-input-icon" aria-hidden="true"></i>
+          <input
+            type="password"
+            x-bind:type="showPassword ? 'text' : 'password'"
+            name="password2"
+            id="id_password2"
+            class="vdp-auth-input vdp-auth-input--password"
+            autocomplete="new-password"
+            required
+          />
+        </div>
+        {% if form.password2.errors %}
+        <p class="vdp-error">{{ form.password2.errors|join:', ' }}</p>
+        {% endif %}
+      </div>
+
+      <button type="submit" class="vdp-auth-submit">Sign up</button>
+    </form>
+
+    <p class="vdp-auth-footer">
+      Already have an account?
+      <a href="{% url 'login' %}" class="vdp-auth-link vdp-auth-link--strong">Sign in</a>
+    </p>
+  </div>
+</div>
 {% endblock content %}
-   
