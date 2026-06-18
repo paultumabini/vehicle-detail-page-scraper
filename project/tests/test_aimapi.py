@@ -16,7 +16,7 @@ from django.core.management.base import CommandError
 from django.test import SimpleTestCase, TestCase
 
 from project.api.aimapi import AimApiData
-from project.models import Account, AccountSyncState
+from project.models import Account, AccountSyncState, TargetSite
 
 
 # ---------------------------------------------------------------------------
@@ -236,6 +236,180 @@ class RenderApiDataEdgeCaseTests(TestCase):
         self.assertFalse(
             Account.objects.get(account_id=27509).is_new_account
         )
+
+
+def _create_target_site(account, *, status='Active', site_id='cascade.example.com'):
+    return TargetSite.objects.create(
+        site_id=site_id,
+        site_name=account,
+        site_url='https://cascade.example/',
+        status=status,
+        condition=False,
+        unit=False,
+        year=False,
+        make=False,
+        model=False,
+        trim=False,
+        stock_number=False,
+        vin=False,
+        vehicle_url=False,
+        msrp=False,
+        price=False,
+        selling_price=False,
+        rebate=False,
+        discount=False,
+        images=False,
+        images_count=False,
+    )
+
+
+class AccountTargetSiteCascadeTests(TestCase):
+    """
+    Account.status drives linked TargetSite.status (manual save and AIM sync).
+
+    INACTIVE/DELETED → pause configured sites; ACTIVE again → restore only
+    sites auto-paused via ``inactive_due_to_account``.
+    """
+
+    def setUp(self):
+        self.account = Account.objects.create(
+            account_id=27510,
+            account_status='ACTIVE',
+            account_name='Cascade Dealer',
+        )
+        self.site = _create_target_site(self.account, status='Active')
+
+    def test_manual_save_to_inactive_inactivates_active_target_site(self):
+        self.account.account_status = 'INACTIVE'
+        self.account.save()
+
+        self.site.refresh_from_db()
+        self.assertEqual(self.site.status, 'Inactive')
+        # Account cascade logs via bulk_create (not TargetSite.save).
+        event = self.site.status_events.get()
+        self.assertEqual(event.source, 'account_sync')
+        self.assertEqual(event.to_status, 'Inactive')
+
+    def test_manual_save_to_deleted_inactivates_active_target_site(self):
+        self.account.account_status = 'DELETED'
+        self.account.save()
+
+        self.site.refresh_from_db()
+        self.assertEqual(self.site.status, 'Inactive')
+
+    def test_active_account_save_leaves_target_site_unchanged(self):
+        self.account.account_manager = 'Still Active'
+        self.account.save()
+
+        self.site.refresh_from_db()
+        self.assertEqual(self.site.status, 'Active')
+
+    def test_sync_to_inactive_inactivates_active_target_site(self):
+        row = {**_SAMPLE_ROW, 'id': '27510', 'account': 'INACTIVE'}
+        AimApiData.render_api_data([row])
+
+        self.site.refresh_from_db()
+        self.assertEqual(self.site.status, 'Inactive')
+
+    def test_sync_to_deleted_inactivates_active_target_site(self):
+        row = {**_SAMPLE_ROW, 'id': '27510', 'account': 'DELETED'}
+        AimApiData.render_api_data([row])
+
+        self.site.refresh_from_db()
+        self.assertEqual(self.site.status, 'Inactive')
+
+    def test_inactive_account_inactivates_non_active_target_site_statuses(self):
+        pending_site = _create_target_site(
+            self.account,
+            status='Pending',
+            site_id='pending.example.com',
+        )
+
+        self.account.account_status = 'INACTIVE'
+        self.account.save()
+
+        self.site.refresh_from_db()
+        pending_site.refresh_from_db()
+        self.assertEqual(self.site.status, 'Inactive')
+        self.assertEqual(pending_site.status, 'Inactive')
+
+    def test_already_inactive_target_site_stays_inactive(self):
+        self.site.status = 'Inactive'
+        self.site.save(update_fields=['status'])
+
+        self.account.account_status = 'DELETED'
+        self.account.save()
+
+        self.site.refresh_from_db()
+        self.assertEqual(self.site.status, 'Inactive')
+        self.assertFalse(self.site.inactive_due_to_account)
+
+    def test_manual_save_to_active_reactivates_auto_inactivated_target_site(self):
+        self.account.account_status = 'INACTIVE'
+        self.account.save()
+        self.site.refresh_from_db()
+        self.assertEqual(self.site.status, 'Inactive')
+        self.assertTrue(self.site.inactive_due_to_account)
+
+        self.account.account_status = 'ACTIVE'
+        self.account.save()
+
+        self.site.refresh_from_db()
+        self.assertEqual(self.site.status, 'Active')
+        self.assertFalse(self.site.inactive_due_to_account)
+
+    def test_sync_to_active_reactivates_auto_inactivated_target_site(self):
+        row_inactive = {**_SAMPLE_ROW, 'id': '27510', 'account': 'INACTIVE'}
+        AimApiData.render_api_data([row_inactive])
+        self.site.refresh_from_db()
+        self.assertEqual(self.site.status, 'Inactive')
+
+        row_active = {**_SAMPLE_ROW, 'id': '27510', 'account': 'ACTIVE'}
+        AimApiData.render_api_data([row_active])
+
+        self.site.refresh_from_db()
+        self.assertEqual(self.site.status, 'Active')
+        self.assertFalse(self.site.inactive_due_to_account)
+
+    def test_manually_inactive_site_not_reactivated_when_account_becomes_active(self):
+        self.site.status = 'Inactive'
+        self.site.save(update_fields=['status'])
+
+        self.account.account_status = 'INACTIVE'
+        self.account.save()
+        self.account.account_status = 'ACTIVE'
+        self.account.save()
+
+        self.site.refresh_from_db()
+        self.assertEqual(self.site.status, 'Inactive')
+        self.assertFalse(self.site.inactive_due_to_account)
+
+    def test_active_account_with_only_inactive_site_listed_in_template(self):
+        """Server renders Inactive rows; client table must not hide them by default."""
+        self.account.account_status = 'INACTIVE'
+        self.account.save()
+        self.site.refresh_from_db()
+        self.assertEqual(self.site.status, 'Inactive')
+
+        from django.contrib.auth.models import User
+        from django.urls import reverse
+
+        from project.models import Project
+
+        user = User.objects.create_user(username='viewer', password='pass')
+        project = Project.objects.create(name='av-aim', sort_order=0)
+        self.site.project = project
+        self.site.save(update_fields=['project'])
+
+        self.client.force_login(user)
+        response = self.client.get(
+            reverse('site-list', kwargs={'project_name': 'av-aim'}),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode()
+        self.assertIn('Cascade Dealer', content)
+        self.assertIn('scrape-status-dot--inactive', content)
 
 
 # ---------------------------------------------------------------------------

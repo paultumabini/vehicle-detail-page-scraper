@@ -11,24 +11,42 @@
   Column order must match accounts.html thead and views.accounts_datatable_json order_fields.
 -->
 <tr id="account-row-{{ account.account_id }}">
-  <td class="vdp-nowrap">
+  <!-- Column 0 — dot indicator; hidden .dt-val status text powers Account Status filter -->
+  <td class="vdp-nowrap vdp-col-center">
+    <span class="dt-val vdp-sr-only">{{ account.account_status }}</span>
+    <span class="account-status-indicator" title="{{ account.account_status|capfirst }}">
+      {% if account.account_status == 'DELETED' %}
+      <i class="fa fa-trash-can account-status-deleted" aria-hidden="true"></i>
+      {% else %}
+      <span
+        class="account-status-dot account-status-dot--{{ account.account_status|lower }}"
+        aria-hidden="true"
+      ></span>
+      {% endif %}
+      <span class="vdp-sr-only">{{ account.account_status|capfirst }}</span>
+    </span>
+  </td>
+
+  <td class="vdp-nowrap vdp-col-center">
     <code class="vdp-account-id">{{ account.account_id }}</code>
   </td>
 
-  {# Column 1 — account name; hidden "new" text powers the New Accounts filter #}
-  <td>
+  <!-- Column 2 — account name; hidden "new" text powers the New Accounts filter -->
+  <td class="vdp-col-left">
     <div class="vdp-account-name-cell">
-      <span class="vdp-cell-name">{{ account.account_name|default:"—" }}</span>
-      {% if account.is_new_account %}
-      <span class="dt-val vdp-sr-only">new</span>
-      <span class="badge-new" id="new-badge-{{ account.account_id }}" title="New account">
-        <i class="fa fa-star" aria-hidden="true"></i> New
-      </span>
-      {% endif %}
+      <div class="vdp-account-name-row">
+        <span class="vdp-cell-name">{{ account.account_name|default:"—" }}</span>
+        {% if account.is_new_account %}
+        <span class="dt-val vdp-sr-only">new</span>
+        <span class="badge-new" id="new-badge-{{ account.account_id }}" title="New account">
+          <i class="fa fa-star" aria-hidden="true"></i> New
+        </span>
+        {% endif %}
+      </div>
     </div>
   </td>
 
-  <td>
+  <td class="vdp-col-left">
     {% if account.city or account.province %}
     <span class="vdp-cell-sub">
       {{ account.city|default:"" }}{% if account.city and account.province %}, {% endif %}{{ account.province|default:"" }}
@@ -38,15 +56,16 @@
     {% endif %}
   </td>
 
-  <td>
-    <span class="dt-val vdp-sr-only">{{ account.account_status }}</span>
-    <span class="status-badge status-{{ account.account_status|lower }}-account">
-      {{ account.account_status|capfirst }}
+  <!-- VDP setup column — priority: DIRECT_FEED → configured TargetSite → need setup.
+       .dt-val tokens match accounts_datatable_json setup_filter (columns[4]). -->
+  <td class="vdp-col-center">
+    {% if account.vdp_data_source == 'DIRECT_FEED' %}
+    <span class="dt-val vdp-sr-only">direct-feed</span>
+    <span class="vdp-direct-feed-yes" title="{{ account.direct_feed_display_title }}">
+      <i class="fa fa-file-lines" aria-hidden="true"></i>
+      Direct feed
     </span>
-  </td>
-
-  {# Scraping — one TargetSite per account; icon-only when configured, muted text when not #}
-  <td>
+    {% else %}
     <span class="dt-val vdp-sr-only">
       {% if account.total_sites > 0 %}configured{% else %}not-configured{% endif %}
     </span>
@@ -60,10 +79,11 @@
       <i class="fa fa-minus" aria-hidden="true"></i> Not set up
     </span>
     {% endif %}
+    {% endif %}
   </td>
 
-  {# Inventory stats (sync_accounts → Account.new_active_stats / used_active_stats) #}
-  <td class="vdp-nowrap vdp-stat-cell">
+  <!-- Inventory stats (sync_accounts → Account.new_active_stats / used_active_stats) -->
+  <td class="vdp-nowrap vdp-col-center vdp-stat-cell">
     {% if account.new_active_stats is not None %}
     <span class="vdp-stat-num">{{ account.new_active_stats }}</span>
     {% else %}
@@ -71,7 +91,7 @@
     {% endif %}
   </td>
 
-  <td class="vdp-nowrap vdp-stat-cell">
+  <td class="vdp-nowrap vdp-col-center vdp-stat-cell">
     {% if account.used_active_stats is not None %}
     <span class="vdp-stat-num">{{ account.used_active_stats }}</span>
     {% else %}
@@ -89,10 +109,15 @@
     {% endif %}
   </td>
 
-  <td class="vdp-nowrap">
-    <span class="vdp-cell-date">
-      {{ account.date_modified|timezone:'US/Eastern'|date:'Y-m-d' }}
+  <!-- AIM synced — aim_last_synced_at only (sync_accounts); manual edits use date_modified instead -->
+  <td class="vdp-nowrap vdp-col-left">
+    {% if account.aim_last_synced_at %}
+    <span class="vdp-cell-date" title="Last AIM Admin sync for this dealer">
+      {{ account.aim_last_synced_at|timezone:'US/Eastern'|date:'Y-m-d' }}
     </span>
+    {% else %}
+    <span class="vdp-cell-muted" title="Added locally; not fed by AIM Admin sync">—</span>
+    {% endif %}
   </td>
 
   <td class="vdp-table-actions-cell">
@@ -106,7 +131,8 @@
       >
         <i class="fa fa-eye" aria-hidden="true"></i>
       </a>
-      {% elif account.total_sites == 0 %}
+      {% elif account.total_sites == 0 and account.vdp_data_source != 'DIRECT_FEED' %}
+      <!-- No “add scrape” for direct-feed accounts — VDP supplied via FTP. -->
       <a
         href="{% url 'new-scrape' %}?account={{ account.account_id }}"
         class="vdp-table-action vdp-table-action--add"
@@ -117,7 +143,7 @@
       </a>
       {% endif %}
       {% if request.user.is_staff %}
-      {# In-app edit — staff only; see AccountUpdateView #}
+      <!-- In-app edit — staff only; see AccountUpdateView -->
       <a
         href="{% url 'account-edit' account.account_id %}"
         class="vdp-table-action vdp-table-action--edit"

@@ -1,17 +1,28 @@
 import csv
 import logging
 import re
+from datetime import timedelta
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
-from django.db.models import Count, Exists, IntegerField, Max, OuterRef, Q, Subquery, Sum
+from django.db.models import (
+    Count,
+    Exists,
+    IntegerField,
+    Max,
+    OuterRef,
+    Q,
+    Subquery,
+    Sum,
+)
 from django.db.models.functions import Cast
 from django.views.decorators.http import require_POST
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
+from django.utils import timezone
 from django.views.generic import (
     CreateView,
     DeleteView,
@@ -21,15 +32,59 @@ from django.views.generic import (
 )
 
 from .forms import AccountUpdateForm, ProjectCreateForm, SiteCreateForm
-from .models import Account, AccountSyncState, Project, Scrape, SpiderLog, TargetSite, Webprovider
-from .spider_provider import spider_for_web_provider, sync_target_site_web_provider
-from .utils import ScrapeEntryCode, ajax_login_required, set_sidebar_nav
+from .models import (
+    Account,
+    AccountSyncState,
+    Project,
+    Scrape,
+    SpiderLog,
+    TargetSite,
+    TargetSiteStatusEvent,
+    Webprovider,
+)
+from .spider_provider import (
+    registered_spider_names,
+    spider_for_web_provider,
+    spider_template_rows,
+    spiders_in_use_counts,
+    sync_target_site_web_provider,
+)
+from .utils import (
+    ScrapeEntryCode,
+    ajax_login_required,
+    set_sidebar_nav,
+    target_site_form_initial_from_account,
+)
 from webscraping.constants import (
     DEFAULT_PROJECT_LIST_SLUG,
     DEMO_READ_ONLY_USERNAME,
 )
 
 logger = logging.getLogger(__name__)
+
+# Window for the collapsible "Recent deactivations" panel (below the target sites table).
+RECENT_DEACTIVATION_DAYS = 30
+
+
+def _recent_target_site_deactivations(
+    project, *, days=RECENT_DEACTIVATION_DAYS, limit=25
+):
+    """
+    Inactive transitions for the project list panel.
+
+    Answers "which sites dropped out recently?" without comparing scrape-log snapshots.
+    Includes both manual pauses and AIM sync cascades (to_status='Inactive' only).
+    """
+    cutoff = timezone.now() - timedelta(days=days)
+    return (
+        TargetSiteStatusEvent.objects.filter(
+            target_site__project=project,
+            to_status='Inactive',
+            created_at__gte=cutoff,
+        )
+        .select_related('target_site', 'target_site__site_name', 'actor')
+        .order_by('-created_at')[:limit]
+    )
 
 
 def _project_slug_for_urls(project):
@@ -55,44 +110,66 @@ def _dashboard_stats():
     """
     KPI + setup-coverage figures for the home dashboard.
 
-    Mirrors Accounts page semantics:
-      - configured  → ACTIVE account with at least one TargetSite row
-      - need_setup  → ACTIVE account with zero TargetSite rows
-      - active_site_count → TargetSite.status == 'Active' (excludes DELETED accounts);
-                            shown on dashboard as "Scrape Sites"
+    Mirrors Accounts page semantics (ACTIVE accounts only):
+      - configured          → SCRAPE + at least one TargetSite row
+      - need_setup          → SCRAPE + zero TargetSite rows
+      - direct_feed_count   → DIRECT_FEED (no scrape target required)
+      - covered_count       → configured + direct_feed (VDP supply complete)
+      - active_spider_count → distinct spider templates on runnable TargetSite rows
 
     Serialized into home.html via json_script for chart.js (no extra API call).
     """
     active_accounts = Account.objects.filter(account_status='ACTIVE')
     active_account_count = active_accounts.count()
-    # Same rule as accounts_datatable_json setup_filter == 'configured'.
-    configured_count = (
-        active_accounts.annotate(site_count=Count('targetsite'))
-        .filter(site_count__gt=0)
+    linked_site = TargetSite.objects.filter(site_name_id=OuterRef('account_id'))
+    scrape_accounts = active_accounts.filter(vdp_data_source='SCRAPE')
+    configured_count = scrape_accounts.filter(Exists(linked_site)).count()
+    need_setup_count = scrape_accounts.filter(~Exists(linked_site)).count()
+    direct_feed_count = active_accounts.filter(vdp_data_source='DIRECT_FEED').count()
+    # Donut “VDP covered” segment — scrape configured ∪ direct feed (see chartSetupCoverage).
+    covered_count = configured_count + direct_feed_count
+
+    # "Spiders in Use" KPI — count distinct templates in production, not SpiderLoader.list().
+    # Same runnable queryset as runspider / match_spiders; blank spider rows are excluded.
+    active_spider_count = (
+        TargetSite.objects.runnable()
+        .exclude(spider__isnull=True)
+        .exclude(spider='')
+        .values('spider')
+        .distinct()
         .count()
     )
 
-    # "Scrape Sites" KPI — runnable scrape targets only, not all TargetSite rows.
-    active_sites_qs = TargetSite.objects.filter(status='Active').exclude(
-        site_name__account_status='DELETED'
-    )
-    active_site_count = active_sites_qs.count()
-
     # Feeds the "Target site status" horizontal bar chart on the dashboard.
+    # Status chart — omit dealers whose AIM account is off (scrape setups are paused).
     site_status_rows = (
-        TargetSite.objects.exclude(site_name__account_status='DELETED')
+        TargetSite.objects.exclude(
+            site_name__account_status__in=('INACTIVE', 'DELETED')
+        )
         .values('status')
         .annotate(c=Count('site_id'))
         .order_by('status')
     )
     site_status = {row['status']: row['c'] for row in site_status_rows}
 
+    accounts_url = reverse('accounts')
     return {
         'active_account_count': active_account_count,
         'configured_count': configured_count,
-        'need_setup_count': max(active_account_count - configured_count, 0),
-        'active_site_count': active_site_count,
+        'need_setup_count': need_setup_count,
+        'direct_feed_count': direct_feed_count,
+        'covered_count': covered_count,
+        'active_spider_count': active_spider_count,
+        'registered_spider_count': len(registered_spider_names()),
         'site_status': site_status,
+        # Deep links for breakdown bar chart clicks (coverage donut is display-only).
+        'accounts_links': {
+            'active': accounts_url,
+            'covered': f'{accounts_url}?setup=covered',
+            'configured': f'{accounts_url}?setup=configured',
+            'need_setup': f'{accounts_url}?setup=not-configured',
+            'direct_feed': f'{accounts_url}?setup=direct-feed',
+        },
     }
 
 
@@ -126,9 +203,8 @@ def home(request):
         'project': Project.objects.all(),
         # Replaces legacy `provider` queryset — KPI cards + json_script for setup charts.
         'dashboard': dashboard,
-        'total_scrapes': (
-            f'{total:,}' if total else None
-        ),  # '{:,}' ⟶ comma separated number, i.e,  1234567 ⟶ 1,234,567
+        # Raw int for data-target; initDashboardCounter() formats with toLocaleString().
+        'total_scrapes_count': total or 0,
     }
     # Sidebar: Dashboard is top-level; not under Accounts or Target Sites.
     set_sidebar_nav(context, section='dashboard')
@@ -137,13 +213,22 @@ def home(request):
 
 
 class SiteListView(LoginRequiredMixin, ListView):
+    """
+    Project-scoped Target Sites list (targetsites.html).
+
+    Annotates each row for Items Scraped and Last Run columns without N+1 queries.
+    Site URL / author / date_created are omitted from the table — see site detail.
+    """
+
     template_name = 'project/targetsites.html'
     context_object_name = 'sites'
     ordering = ['-date_created']
+
     # filter project key passed in the url to get the specific project
     def get_queryset(self):
         self.project = get_object_or_404(Project, name=self.kwargs.get('project_name'))
 
+        # Subqueries for Last Run / Items Scraped columns — see target_site_last_run filter.
         latest_scrape_checked = (
             Scrape.objects.filter(
                 target_site=OuterRef('pk'),
@@ -160,13 +245,38 @@ class SiteListView(LoginRequiredMixin, ListView):
             .values('date_created')[:1]
         )
 
+        latest_log_items_scraped = (
+            SpiderLog.objects.filter(
+                target_site=OuterRef('pk'),
+            )
+            .order_by('-date_created')
+            .values('items_scraped')[:1]
+        )
+
+        latest_status_event = TargetSiteStatusEvent.objects.filter(
+            target_site=OuterRef('pk'),
+        ).order_by('-created_at')
+
         return (
             self.project.projects.all()
-            .select_related('site_name', 'author', 'author__profile', 'project')
+            .select_related('site_name', 'project')
             .annotate(
                 latest_scrape_checked=Subquery(latest_scrape_checked),
                 latest_log_created=Subquery(latest_log_created),
+                # Items Scraped column — count from most recent spider log.
+                last_log_items_scraped=Subquery(latest_log_items_scraped),
+                # Status dot tooltip (|target_site_status_tooltip|) — latest pause reason.
+                latest_status_event_source=Subquery(
+                    latest_status_event.values('source')[:1]
+                ),
+                latest_status_event_detail=Subquery(
+                    latest_status_event.values('detail')[:1]
+                ),
+                latest_status_event_at=Subquery(
+                    latest_status_event.values('created_at')[:1]
+                ),
             )
+            # Last Run column — |target_site_last_run| picks max(latest_log_created, latest_scrape_checked).
             .order_by('-date_created')
         )
 
@@ -178,6 +288,10 @@ class SiteListView(LoginRequiredMixin, ListView):
 
         # section label
         context['project'] = self.project.name
+        context['recent_deactivations'] = _recent_target_site_deactivations(
+            self.project
+        )
+        context['recent_deactivation_days'] = RECENT_DEACTIVATION_DAYS
         return context
 
 
@@ -222,6 +336,10 @@ class SiteDetailView(LoginRequiredMixin, DetailView):
 
         # Sidebar: site detail belongs to the site's project bucket.
         set_sidebar_nav(context, section='target_sites', project_name=project_name)
+        # Per-site audit trail — newest first; cap keeps the detail page responsive.
+        context['status_events'] = site.status_events.select_related('actor').order_by(
+            '-created_at'
+        )[:50]
         return context
 
 
@@ -235,14 +353,23 @@ class SiteCreateView(LoginRequiredMixin, CreateView, ScrapeEntryCode):
         return form
 
     def get_initial(self):
-        """Pre-select account when opened from Accounts + button (?account=<pk>).
+        """Pre-fill from Account when opened via Accounts + button (?account=<pk>).
 
+        Server-side so fields render on first paint; newscrape.js mirrors the same
+        mapping when the dealership dropdown changes or after /account-provider-json/.
         Must be its own method — not inside get_form() (return would skip this).
         """
         initial = super().get_initial()
         account_id = self.request.GET.get('account')
         if account_id and account_id.isdigit():
-            initial['site_name'] = int(account_id)
+            # select_related: web_provider name is copied into the form initial.
+            account = (
+                Account.objects.filter(pk=int(account_id))
+                .select_related('web_provider')
+                .first()
+            )
+            if account:
+                initial.update(target_site_form_initial_from_account(account))
         return initial
 
     def get_context_data(self, **kwargs):
@@ -470,6 +597,28 @@ def help(request):
     return render(request, 'project/help.html', context)
 
 
+@login_required
+def spider_templates_view(request):
+    """
+    Spider template registry — templates in use on runnable sites vs all registered.
+
+    Deep link from dashboard KPI: ?view=in-use | ?view=registered (default: registered).
+    """
+    view = request.GET.get('view', 'registered').strip()
+    if view not in ('in-use', 'registered'):
+        view = 'registered'
+
+    templates = spider_template_rows(view=view)
+    context = {
+        'view': view,
+        'templates': templates,
+        'in_use_count': len(spiders_in_use_counts()),
+        'registered_count': len(registered_spider_names()),
+    }
+    set_sidebar_nav(context, section='dashboard')
+    return render(request, 'project/spider_templates.html', context)
+
+
 # json data
 @ajax_login_required
 def scrape_data_json(request):
@@ -510,16 +659,24 @@ def _accounts_queryset():
 
 def _apply_accounts_setup_filter(qs, setup_filter):
     """
-    Narrow accounts by whether any TargetSite row exists for the dealer.
+    Narrow accounts by VDP setup status (Scraping / VDP setup column).
 
     Uses Exists (not total_sites=0) so filtering stays correct with annotations/joins.
-    Values match account_row.html Scraping column: configured | not-configured.
+    Values match account_row.html: configured | not-configured | direct-feed | covered.
     """
     linked_site = TargetSite.objects.filter(site_name_id=OuterRef('account_id'))
     if setup_filter == 'configured':
-        return qs.filter(Exists(linked_site))
+        return qs.filter(vdp_data_source='SCRAPE').filter(Exists(linked_site))
     if setup_filter == 'not-configured':
-        return qs.filter(~Exists(linked_site))
+        return qs.filter(vdp_data_source='SCRAPE').filter(~Exists(linked_site))
+    if setup_filter == 'direct-feed':
+        return qs.filter(vdp_data_source='DIRECT_FEED')
+    # Union of dashboard covered_count — not exposed in Accounts dropdown (donut-only metric).
+    if setup_filter == 'covered':
+        return qs.filter(
+            Q(vdp_data_source='DIRECT_FEED')
+            | (Q(vdp_data_source='SCRAPE') & Q(Exists(linked_site)))
+        )
     return qs
 
 
@@ -562,13 +719,13 @@ def _accounts_sync_banner():
 
 
 def _account_row_cells(account, request):
-    """Render account_row.html as a list of inner-HTML strings per <td> (for AJAX table)."""
+    """Render account_row.html as a list of <td>…</td> fragments (for AJAX table)."""
     row_html = render_to_string(
         'project/partials/account_row.html',
         {'account': account},
         request=request,
     )
-    return re.findall(r'<td[^>]*>(.*?)</td>', row_html, flags=re.S | re.I)
+    return re.findall(r'(<td[^>]*>.*?</td>)', row_html, flags=re.S | re.I)
 
 
 @login_required
@@ -598,7 +755,7 @@ def accounts_datatable_json(request):
             search_q |= Q(account_id=int(search_val))
         qs = qs.filter(search_q)
 
-    account_filter = request.GET.get('columns[3][search][value]', '').strip()
+    account_filter = request.GET.get('columns[0][search][value]', '').strip()
     if account_filter:
         qs = qs.filter(account_status=account_filter)
 
@@ -607,27 +764,27 @@ def accounts_datatable_json(request):
         or request.GET.get('columns[4][search][value]', '').strip()
     )
     # Whitelist only — flat ?setup= from dashboard deep link; columns[4] from accounts.js.
-    if setup_filter in ('configured', 'not-configured'):
+    if setup_filter in ('configured', 'not-configured', 'direct-feed', 'covered'):
         qs = _apply_accounts_setup_filter(qs, setup_filter)
 
-    new_filter = request.GET.get('columns[1][search][value]', '').strip()
+    new_filter = request.GET.get('columns[2][search][value]', '').strip()
     if new_filter == 'new':
         qs = qs.filter(is_new_account=True)
 
     records_filtered = qs.count()
 
-    order_col = int(request.GET.get('order[0][column]', 1))
+    order_col = int(request.GET.get('order[0][column]', 2))
     order_dir = request.GET.get('order[0][dir]', 'asc')
     order_fields = {
-        0: 'account_id',
-        1: 'account_name',
-        2: 'city',
-        3: 'account_status',
+        0: 'account_status',
+        1: 'account_id',
+        2: 'account_name',
+        3: 'city',
         4: 'total_sites',
         5: 'new_active_stats',
         6: 'used_active_stats',
         7: 'facebook_feed',
-        8: 'date_modified',
+        8: 'aim_last_synced_at',
     }
     order_field = order_fields.get(order_col, 'account_name')
     if order_dir == 'desc':
@@ -658,19 +815,26 @@ def accounts_view(request):
       - accounts.js applies the same filter to columns[4] on first fetch
     """
     setup_filter = request.GET.get('setup', '').strip()
-    if setup_filter not in ('configured', 'not-configured'):
+    if setup_filter not in ('configured', 'not-configured', 'direct-feed', 'covered'):
         setup_filter = ''
 
     status_counts = _account_status_counts()
     # Header card defaults; overridden when ?setup= narrows the table.
     header_count = status_counts.get('ACTIVE', 0)
     header_label = 'Active'
+    stats = _dashboard_stats()
     if setup_filter == 'not-configured':
-        header_count = _dashboard_stats()['need_setup_count']
+        header_count = stats['need_setup_count']
         header_label = 'Need setup'
     elif setup_filter == 'configured':
-        header_count = _dashboard_stats()['configured_count']
+        header_count = stats['configured_count']
         header_label = 'Configured'
+    elif setup_filter == 'direct-feed':
+        header_count = stats['direct_feed_count']
+        header_label = 'Direct feed'
+    elif setup_filter == 'covered':
+        header_count = stats['covered_count']
+        header_label = 'VDP covered'
 
     context = {
         'status_counts': status_counts,

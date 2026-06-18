@@ -1,14 +1,15 @@
 /*
   newscrape.js — New Scrape form helpers (targetsite_form.html).
 
-  Account pre-select (from Accounts + button):
-    1. SiteCreateView.get_initial() sets site_name from ?account=<pk>
-    2. preselectAccountFromUrl() runs after /account-provider-json/ loads
-    3. fillAccountFields() copies site_url, site_id, web_provider from account data
+  Account pre-fill (from Accounts + button, ?account=<pk>):
+    1. SiteCreateView.get_initial() — SSR: site_name, site_url, site_id, web_provider, note
+    2. preselectAccountFromUrl() — after /account-provider-json/ (belt-and-suspenders)
+    3. fillAccountFields() — same mapping when dealership dropdown changes manually
 
   Site URL → domain name (site id):
     extractDomainFromSiteUrl() → registrable name only, no TLD (example.com.au → example).
     initSiteUrlDomainSync() fills #id_site_id as the operator types.
+    Python twin: project.utils.extract_site_id_from_site_url (keep both in sync).
 
   Web Provider combobox:
     Replaces native <datalist> — dropdown is DOM-owned so main.css scrollbars apply.
@@ -227,18 +228,27 @@ async function addProviderDataList(func, url1, url2) {
   func(providerList, url2);
 }
 
-/** Mirror site_name change handler — used for manual select and ?account= deep link. */
+/** Mirror site_name change handler — used for manual select and ?account= deep link.
+
+  Field list must match target_site_form_initial_from_account() in project/utils.py.
+*/
 function fillAccountFields(form, providers, accountList, accountId) {
   if (!accountId) return;
 
-  accountList.forEach(({ account_id, site_url, web_provider_id }) => {
+  accountList.forEach(({ account_id, site_url, web_provider_id, note }) => {
     if (account_id.toString() === accountId.toString()) {
       form.elements.site_url.value = site_url || '';
       // Same hostname logic as initSiteUrlDomainSync — replaces legacy regex that stripped TLD.
       form.elements.id_site_id.value = extractDomainFromSiteUrl(site_url);
       providers.forEach(({ id, name }) => {
-        if (id === web_provider_id) form.elements.web_provider.value = name;
+        // Number() — JSON ids may be int or string depending on serializer.
+        if (Number(id) === Number(web_provider_id)) {
+          form.elements.web_provider.value = name;
+        }
       });
+      if (form.elements.note) {
+        form.elements.note.value = note || '';
+      }
     }
   });
 }
@@ -252,7 +262,7 @@ function preselectAccountFromUrl(form, providers, accountList) {
   fillAccountFields(form, providers, accountList, accountId);
 }
 
-// populate other account info
+// populate other account info — keeps dropdown edits in sync with SSR get_initial()
 async function addAccountList(providers, url) {
   const accountList = await fetchApi(url);
   const form = document.querySelector('form');
@@ -264,6 +274,9 @@ async function addAccountList(providers, url) {
       form.elements.site_url.value = '';
       form.elements.id_site_id.value = '';
       form.elements.web_provider.value = '';
+      if (form.elements.note) {
+        form.elements.note.value = '';
+      }
     }
   });
 

@@ -17,5 +17,5 @@ def sidebar(request):
         .exclude(name='')
         .order_by('sort_order', 'name'),
         'default_project_slug': DEFAULT_PROJECT_LIST_SLUG,
-        'display_time_zone': getattr(settings, 'DISPLAY_TIME_ZONE', 'UTC'),
+        'display_time_zone': settings.DEFAULT_TIME_ZONE,
     }

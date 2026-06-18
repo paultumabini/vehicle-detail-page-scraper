@@ -1,21 +1,21 @@
 import datetime
+from zoneinfo import ZoneInfo
 
-import pytz
+from django.conf import settings
 from django.db.models import Max, OuterRef, Subquery
 from django.contrib import admin
 from django.contrib.admin import DateFieldListFilter
 from django.contrib.auth.admin import UserAdmin
 from django.contrib.auth.models import User
 from django.http import HttpResponseRedirect
+from django.utils import timezone as dj_tz
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 from unfold.admin import ModelAdmin as UnfoldModelAdmin
 
-from .models import Account, Project, Scrape, SpiderLog, TargetSite, Webprovider
+from .models import Account, Project, Scrape, SpiderLog, TargetSite, TargetSiteStatusEvent, Webprovider
 from .spider_provider import sync_target_site_web_provider
 from .utils import ScrapeEntryCode
-
-MANILA_TZ = pytz.timezone('Asia/Manila')
 
 _ACCOUNT_LABELS = {
     'ACTIVE': 'Active',
@@ -71,12 +71,11 @@ def _account_status_icon(account_value):
     )
 
 
-def _format_manila_datetime(dt_value):
-    return (
-        pytz.utc.localize(dt_value)
-        .astimezone(MANILA_TZ)
-        .strftime('%Y-%m-%d %I:%M:%S %p')
-    )
+def _format_display_datetime(dt_value):
+    display_tz = ZoneInfo(settings.DEFAULT_TIME_ZONE)
+    if dj_tz.is_naive(dt_value):
+        dt_value = dj_tz.make_aware(dt_value, dj_tz.UTC)
+    return dt_value.astimezone(display_tz).strftime('%Y-%m-%d %I:%M:%S %p')
 
 
 # Shared query-string key for dealer account sidebar filters (Account, TargetSite, SpiderLog).
@@ -379,6 +378,10 @@ class TargetSiteAdminView(
         if not obj.entry_code:
             obj.entry_code = self.get_scrape_entry_code(form)
 
+        if change:
+            # Drives TargetSiteStatusEvent.actor on manual status edits in admin.
+            obj.updated_by = request.user
+
         super().save_model(request, obj, form, change)
 
     # show vdp urls links
@@ -452,12 +455,58 @@ class TargetSiteAdminView(
         )
 
 
+class TargetSiteStatusEventAdminView(UnfoldModelAdmin):
+    """
+    Read-only audit log for target site status transitions.
+
+    Rows are created by model hooks (manual save, account cascade) — not by admins.
+    """
+
+    list_display = (
+        'created_at',
+        'target_site',
+        'from_status',
+        'to_status',
+        'source',
+        'detail',
+        'actor',
+    )
+    list_filter = ['source', 'to_status', ('created_at', DateFieldListFilter)]
+    search_fields = [
+        'target_site__site_id',
+        'target_site__entry_code',
+        'target_site__site_name__account_name',
+        'detail',
+    ]
+    ordering = ('-created_at',)
+    readonly_fields = (
+        'target_site',
+        'from_status',
+        'to_status',
+        'source',
+        'detail',
+        'created_at',
+        'actor',
+    )
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
 class DateYesterdayFieldListFilter(DateFieldListFilter):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        today = datetime.datetime.now()  # utc
-        date = pytz.utc.localize(today).astimezone(MANILA_TZ)
+        today = dj_tz.now()
+        if dj_tz.is_naive(today):
+            today = dj_tz.make_aware(today, dj_tz.UTC)
+        date = today.astimezone(ZoneInfo(settings.DEFAULT_TIME_ZONE))
 
         yesterday = date - datetime.timedelta(days=1)
 
@@ -536,7 +585,7 @@ class SpiderlogsAdminView(DefaultActiveAccountAdminMixin, UnfoldModelAdmin):
 
     @admin.display(ordering='date_created')
     def date_created_fmt(self, obj):
-        return _format_manila_datetime(obj.date_created)
+        return _format_display_datetime(obj.date_created)
 
     @admin.display(ordering='items_scraped')
     def scraped(self, obj):
@@ -594,7 +643,7 @@ class ScrapeAdminView(UnfoldModelAdmin):
 
     @admin.display(ordering='date_created')
     def date_created_fmt(self, obj):
-        return _format_manila_datetime(obj.last_checked)
+        return _format_display_datetime(obj.last_checked)
 
     date_created_fmt.short_description = 'Date Created'
 
@@ -620,6 +669,8 @@ admin.site.register(User, UserAdmin)
 
 admin.site.register(Account, AccountAdminView)
 admin.site.register(TargetSite, TargetSiteAdminView)
+# Append-only status audit — rows come from model hooks, not admin form saves.
+admin.site.register(TargetSiteStatusEvent, TargetSiteStatusEventAdminView)
 admin.site.register(Scrape, ScrapeAdminView)
 admin.site.register(SpiderLog, SpiderlogsAdminView)
 admin.site.register(Project, ProjectAdminView)

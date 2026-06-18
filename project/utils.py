@@ -1,9 +1,27 @@
 import functools
 import re
+from urllib.parse import urlparse
 
 from django.http import HttpResponse
 
 from .models import TargetSite
+
+# Second-level labels that precede a country code (com.au, co.uk, net.nz, …).
+# Shared with static/js/newscrape.js — update both if TLD rules change.
+_COMPOUND_TLD_LABELS = frozenset({
+    'com',
+    'net',
+    'org',
+    'edu',
+    'gov',
+    'co',
+    'ac',
+    'asn',
+    'id',
+    'ne',
+    'or',
+    'web',
+})
 
 
 def entry_code_prefix(project_name):
@@ -23,6 +41,75 @@ def parse_entry_code_number(entry_code):
 def format_entry_code(project_name, number):
     """Build ``{PREFIX}-{NNN}`` (e.g. ``AVAIM-245``)."""
     return f'{entry_code_prefix(project_name)}-{number:03d}'
+
+
+def strip_site_id_from_hostname(hostname: str) -> str:
+    """Drop www. and TLD — keep registrable name (mirrors newscrape.js)."""
+    host = re.sub(r'^www\.', '', hostname or '', flags=re.I).strip()
+    parts = [part for part in host.split('.') if part]
+    if not parts:
+        return ''
+    if len(parts) == 1:
+        return parts[0]
+
+    tld = parts[-1].lower()
+    sld = parts[-2].lower()
+    compound_tld = len(tld) == 2 and sld in _COMPOUND_TLD_LABELS and len(parts) >= 3
+
+    if compound_tld:
+        return parts[-3]
+    return parts[-2]
+
+
+def extract_site_id_from_site_url(raw_url: str) -> str:
+    """
+    Site id label from a dealer URL — scheme/path/www stripped, TLD dropped.
+
+    Keeps TargetSite.site_id aligned with the New Scrape form's domain field.
+    """
+    trimmed = (raw_url or '').strip()
+    if not trimmed:
+        return ''
+
+    hostname = ''
+    try:
+        with_scheme = (
+            trimmed
+            if re.match(r'^https?://', trimmed, flags=re.I)
+            else f'https://{trimmed}'
+        )
+        hostname = urlparse(with_scheme).hostname or ''
+    except ValueError:
+        hostname = re.sub(r'^https?://', '', trimmed, flags=re.I).split('/')[0]
+
+    return strip_site_id_from_hostname(hostname)
+
+
+def target_site_form_initial_from_account(account) -> dict:
+    """
+    Map Account fields onto SiteCreateForm initial values.
+
+    Used by SiteCreateView.get_initial() for /scrape/new/?account=<pk> (Accounts + button).
+    Only copies fields that exist on both models; project/feed_id stay blank.
+    Domain name is derived from site_url — must stay aligned with newscrape.js.
+    """
+    initial = {'site_name': account.pk}
+
+    if account.site_url:
+        initial['site_url'] = account.site_url
+        site_id = extract_site_id_from_site_url(account.site_url)
+        if site_id:
+            initial['site_id'] = site_id
+
+    # Account.web_provider is a FK; TargetSite stores the provider name as text.
+    provider = getattr(account, 'web_provider', None)
+    if provider and provider.name:
+        initial['web_provider'] = provider.name
+
+    if account.note:
+        initial['note'] = account.note
+
+    return initial
 
 
 class ScrapeEntryCode:

@@ -163,7 +163,6 @@ const SCRAPE_TABLE_COLUMNS = [
   { key: 'discount', label: 'Discount' },
   { key: 'image_urls', label: 'Images', type: 'image-list' },
   { key: 'images_count', label: 'Image Count', type: 'count', footerClass: 'total-images' },
-  { key: 'last_checked', label: 'Last Checked' },
 ];
 
 // Stock# detail modal — keys align with SCRAPE_TABLE_COLUMNS (image_urls shown via gallery, not as text).
@@ -182,7 +181,6 @@ const VEHICLE_DETAIL_LABELS = {
   'Selling Price:': 'selling_price',
   'Rebate:': 'rebate',
   'Discount:': 'discount',
-  'Last Checked:': 'last_checked',
   'Image Count:': 'images_count',
 };
 

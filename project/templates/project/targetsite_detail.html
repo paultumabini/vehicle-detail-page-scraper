@@ -37,12 +37,21 @@
       <h4>{{ object.site_name.account_name|default:object.site_id }}</h4>
       <p>
         Entry {{ object.entry_code|default:"—" }}
+        {% if object.site_name %}
+        · Account ID <code class="vdp-account-id">{{ object.site_name.account_id }}</code>
+        {% endif %}
         · Site ID <code class="vdp-account-id">{{ object.site_id }}</code>
       </p>
     </div>
     <span class="status-badge status-{{ object.status|lower }}">
       {{ object.get_status_display }}
     </span>
+    {% if object.inactive_due_to_account %}
+    {# Live flag — distinct from status history; cleared when operator edits status #}
+    <p class="vdp-site-detail__status-note">
+      Paused automatically — linked AIM account is inactive or deleted.
+    </p>
+    {% endif %}
   </div>
 </div>
 
@@ -274,6 +283,47 @@
       {% endif %}
       {% endwith %}
       {% endwith %}
+    </div>
+
+    {# TargetSiteStatusEvent audit log — below crawler stats (ops first, history second). #}
+    <div class="vdp-card vdp-site-detail__card vdp-site-detail__card--wide">
+      <h5 class="vdp-scrape-form__section-title">Status history</h5>
+      {% if status_events %}
+      <table class="w-full vdp-data-table vdp-status-history-table">
+        <thead>
+          <tr>
+            <th scope="col">When</th>
+            <th scope="col">Change</th>
+            <th scope="col">Source</th>
+            <th scope="col">Detail</th>
+            <th scope="col">By</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for event in status_events %}
+          <tr>
+            <td class="vdp-nowrap">
+              {{ event.created_at|timezone:'US/Eastern'|date:'Y-m-d H:i' }}
+            </td>
+            <td class="vdp-nowrap">
+              {{ event.from_status|default:"—" }} → {{ event.to_status }}
+            </td>
+            <td>{{ event.source|status_event_source_label }}</td>
+            <td>{{ event.detail|default:"—" }}</td>
+            <td>
+              {% if event.actor %}
+              {{ event.actor.username }}
+              {% else %}
+              <span class="vdp-cell-muted">System</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="vdp-site-detail__empty">No status changes recorded yet.</p>
+      {% endif %}
     </div>
   </div>
 

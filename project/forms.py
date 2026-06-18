@@ -82,20 +82,37 @@ class AccountUpdateForm(forms.ModelForm):
 
     AIM-owned fields (name, status, stats) are read-only in account_form.html.
     Excludes aim_last_synced_at so manual saves never look like AIM sync rows.
+
+    vdp_data_source / direct_feed_* are operator-only (not sync_accounts); they drive
+    Accounts “VDP setup” column and dashboard covered vs need_setup KPIs.
     """
 
     class Meta:
         model = Account
-        fields = ['web_provider', 'account_manager', 'site_url', 'note']
+        fields = [
+            'web_provider',
+            'account_manager',
+            'site_url',
+            'vdp_data_source',
+            'direct_feed_file',
+            'batch_feed_source',
+            'note',
+        ]
         labels = {
             'web_provider': 'Web provider',
             'account_manager': 'Account manager',
             'site_url': 'Site URL',
+            'vdp_data_source': 'VDP data source',
+            'direct_feed_file': 'Direct feed file',
+            'batch_feed_source': 'Batch feed source',
             'note': 'Notes',
         }
         help_texts = {
             'web_provider': 'Synced to the linked target site when one exists.',
             'site_url': 'Dealer VDP URL from AIM or manual override.',
+            'vdp_data_source': Account._meta.get_field('vdp_data_source').help_text,
+            'direct_feed_file': Account._meta.get_field('direct_feed_file').help_text,
+            'batch_feed_source': Account._meta.get_field('batch_feed_source').help_text,
         }
         widgets = {
             'web_provider': forms.Select(attrs={'class': 'vdp-input'}),
@@ -104,6 +121,21 @@ class AccountUpdateForm(forms.ModelForm):
             ),
             'site_url': forms.TextInput(
                 attrs={'class': 'vdp-input', 'placeholder': 'https://…'}
+            ),
+            'vdp_data_source': forms.Select(attrs={'class': 'vdp-input'}),
+            'direct_feed_file': forms.TextInput(
+                attrs={
+                    'class': 'vdp-input',
+                    'placeholder': 'e.g. dealer_12345_vdp.csv',
+                    'autocomplete': 'off',
+                }
+            ),
+            'batch_feed_source': forms.TextInput(
+                attrs={
+                    'class': 'vdp-input',
+                    'placeholder': 'e.g. reynolds_master_batch.csv',
+                    'autocomplete': 'off',
+                }
             ),
             'note': forms.Textarea(
                 attrs={
@@ -121,7 +153,18 @@ class AccountUpdateForm(forms.ModelForm):
         self.fields['web_provider'].empty_label = '— none —'
         self.fields['account_manager'].required = False
         self.fields['site_url'].required = False
+        self.fields['vdp_data_source'].choices = Account.VDP_DATA_SOURCE
+        self.fields['direct_feed_file'].required = False
+        self.fields['batch_feed_source'].required = False
         self.fields['note'].required = False
+
+    def clean(self):
+        cleaned_data = super().clean()
+        # Switching back to SCRAPE clears feed fields so model.clean() stays valid.
+        if cleaned_data.get('vdp_data_source') == 'SCRAPE':
+            cleaned_data['direct_feed_file'] = None
+            cleaned_data['batch_feed_source'] = None
+        return cleaned_data
 
 
 class SiteCreateForm(forms.ModelForm):

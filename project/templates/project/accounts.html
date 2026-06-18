@@ -17,7 +17,7 @@
       AV AIM last synced:
       {% if aim_last_synced_at %}
       {{ aim_last_synced_at|timezone:display_time_zone|date:'Y-m-d H:i' }}
-      ({{ aim_last_synced_at|timezone_abbrev:display_time_zone }})
+      ({{ aim_last_synced_at|timezone_abbrev }})
       {% else %}
       —
       {% endif %}
@@ -25,8 +25,8 @@
     </p>
   </div>
 
-  {# Count card: SSR from accounts_view; accounts.js keeps in sync after AJAX fetch #}
-  {# Deep link ?setup=not-configured shows "Need setup" count before JS runs #}
+  <!-- Count card: SSR from accounts_view; accounts.js keeps in sync after AJAX fetch -->
+  <!-- Deep link ?setup=not-configured shows "Need setup" count before JS runs -->
   <div
     class="vdp-card py-2 px-4 mb-0 text-center shrink-0"
     style="min-width: 80px"
@@ -56,7 +56,7 @@
       >
         Account Status
       </label>
-      {# Default Active — synced with ACCOUNTS_DEFAULT_STATUS in accounts.js #}
+      <!-- Default Active — synced with ACCOUNTS_DEFAULT_STATUS in accounts.js -->
       <select
         id="filter-account"
         class="border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-700 bg-white focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 min-w-[140px]"
@@ -75,14 +75,15 @@
       >
         Scraping Setup
       </label>
-      {# initial_setup_filter from ?setup= — paired with accounts.js URL handler #}
+      <!-- VDP setup — configured | need setup | direct feed (see account_row.html). -->
       <select
         id="filter-setup"
         class="border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-700 bg-white focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 min-w-[140px]"
       >
         <option value="">All</option>
         <option value="configured"{% if initial_setup_filter == 'configured' %} selected{% endif %}>Configured</option>
-        <option value="not-configured"{% if initial_setup_filter == 'not-configured' %} selected{% endif %}>Not configured</option>
+        <option value="not-configured"{% if initial_setup_filter == 'not-configured' %} selected{% endif %}>Need setup</option>
+        <option value="direct-feed"{% if initial_setup_filter == 'direct-feed' %} selected{% endif %}>Direct feed</option>
       </select>
     </div>
 
@@ -134,16 +135,16 @@
     >
       <thead>
         <tr>
-          <th class="text-left">ID</th>
-          <th class="text-left">Account Name</th>
-          <th class="text-left">Location</th>
-          <th class="text-left">Account Status</th>
-          <th class="text-left">Scraping</th>
-          <th class="text-left">New Active</th>
-          <th class="text-left">Used Active</th>
-          <th class="text-left">FB Feed</th>
-          <th class="text-left">Last Synced</th>
-          <th class="text-center">Actions</th>
+          <th class="vdp-col-center">Status</th>
+          <th class="vdp-col-center">ID</th>
+          <th class="vdp-col-left">Account Name</th>
+          <th class="vdp-col-left">Location</th>
+          <th class="vdp-col-center">VDP setup</th>
+          <th class="vdp-col-center">New Active</th>
+          <th class="vdp-col-center">Used Active</th>
+          <th>FB Feed</th>
+          <th class="vdp-col-left">AIM synced</th>
+          <th class="vdp-col-center">Actions</th>
         </tr>
       </thead>
       <tbody></tbody>

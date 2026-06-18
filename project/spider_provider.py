@@ -1,19 +1,22 @@
 """
 Map AIM ``web_provider`` values to Scrapy ``spider`` names.
 
-AIM vendor labels do not always match spider module names (e.g. ``omni`` vs
-``omni_auto``). Admin sync and site forms should use these helpers instead of
+AIM vendor labels do not always match spider module names (e.g. ``astrawordpress`` vs
+``wp_astra``). Admin sync and site forms should use these helpers instead of
 copying ``web_provider`` into ``spider`` verbatim.
+
+Also powers dashboard “Templates in use” KPI and ``/spider-templates/`` (registered
+spiders from SpiderLoader vs distinct ``spider`` on runnable TargetSite rows).
 """
 
 from __future__ import annotations
 
 from functools import lru_cache
 
+from django.db.models import Count
+
 # AIM Webprovider.name -> scrapebucket spider ``name`` when they differ.
 WEB_PROVIDER_SPIDER: dict[str, str] = {
-    'omni': 'omni_auto',
-    'omniauto': 'omni_auto',
     'astrawordpress': 'wp_astra',
 }
 
@@ -33,7 +36,50 @@ def registered_spider_names() -> frozenset[str]:
         sys.path.insert(0, scrape_root_str)
 
     loader = spiderloader.SpiderLoader.from_settings(get_project_settings())
-    return frozenset(loader.list())
+    return frozenset[str](loader.list())
+
+
+def spiders_in_use_counts() -> dict[str, int]:
+    """Distinct spider names on runnable TargetSite rows → count of sites (dashboard KPI)."""
+    from project.models import TargetSite
+
+    rows = (
+        TargetSite.objects.runnable()
+        .exclude(spider__isnull=True)
+        .exclude(spider='')
+        .values('spider')
+        .annotate(site_count=Count('site_id'))
+    )
+    return {row['spider']: row['site_count'] for row in rows}
+
+
+def spider_template_rows(*, view: str) -> list[dict]:
+    """
+    Rows for /spider-templates/ — ``view`` is ``in-use`` or ``registered``.
+
+    Each row: name, site_count, in_use (assigned on at least one runnable site).
+    """
+    in_use = spiders_in_use_counts()
+    registered = sorted(registered_spider_names())
+
+    if view == 'registered':
+        return [
+            {
+                'name': name,
+                'site_count': in_use.get(name, 0),
+                'in_use': name in in_use,
+            }
+            for name in registered
+        ]
+
+    return [
+        {
+            'name': name,
+            'site_count': count,
+            'in_use': True,
+        }
+        for name, count in sorted(in_use.items())
+    ]
 
 
 def spider_for_web_provider(provider_name: str | None) -> str | None:

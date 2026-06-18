@@ -1,56 +1,69 @@
-{% load tz %}
 {% load custom_filters %}
-{# One Target Sites table row — main.css only (matches Accounts row pattern). #}
+<!--
+  One Target Sites table row — main.css only (matches Accounts row pattern).
+
+  Column order must match targetsites.html thead and main.js VdpClientTable filters:
+    0 Entry | 1 Status | 2 Site Name | 3 Provider
+    4 Items Scraped | 5 Last Run | 6 Exported | 7 Actions
+
+  Use vdp-col-center / vdp-col-left on td (and matching th) — see #dealers-list-table in main.css.
+
+  Items Scraped / Last Run use queryset annotations from SiteListView.get_queryset.
+
+  Use HTML comments in table templates — not Django template comments on multiple lines.
+-->
 <tr>
-  <td class="vdp-nowrap vdp-stat-cell">
-    <a class="vdp-table-link" href="{% url 'site-detail' site.project site.pk %}">{{ site.entry_code }}</a>
+  <td class="vdp-nowrap vdp-col-center">
+    <a class="vdp-table-link vdp-entry-code" href="{% url 'site-detail' site.project site.pk %}">{{ site.entry_code }}</a>
   </td>
 
-  <td>
+  <!-- Column 1: dot indicator; hidden .dt-val status text powers VdpClientTable exact filter.
+       title uses |target_site_status_tooltip| — latest TargetSiteStatusEvent when inactive. -->
+  <td class="vdp-nowrap vdp-col-center">
+    <span class="dt-val vdp-sr-only">{{ site.status }}</span>
+    <span class="scrape-status-indicator" title="{{ site|target_site_status_tooltip }}">
+      <span
+        class="scrape-status-dot scrape-status-dot--{{ site.status|lower }}"
+        aria-hidden="true"
+      ></span>
+      <span class="vdp-sr-only">{{ site.get_status_display }}</span>
+    </span>
+  </td>
+
+  <td class="vdp-col-left">
     <a class="vdp-table-link vdp-cell-name" href="{% url 'site-detail' site.project site.pk %}">
       {{ site.site_name.account_name|default:"—" }}
     </a>
   </td>
 
-  <td class="vdp-url-cell">
-    <a class="vdp-table-link vdp-cell-url" href="{{ site.site_url }}" target="_blank" rel="noopener noreferrer">
-      {{ site.site_url|default:"—" }}
-    </a>
-  </td>
-
-  <td>
+  <td class="vdp-col-left">
     <span class="vdp-cell-sub">{{ site.web_provider|default:"—" }}</span>
   </td>
 
-  {# Hidden exact status for client filter — avoids "Active" matching "Inactive". #}
-  <td>
-    <span class="dt-val vdp-sr-only">{{ site.status }}</span>
-    <span class="status-badge status-{{ site.status|lower }}">
-      {{ site.get_status_display }}
-    </span>
-  </td>
-
-  <td class="vdp-nowrap">
-    <span class="vdp-cell-date">{{ site|target_site_last_run }}</span>
-  </td>
-
-  <td>
-    {% if site.author %}
-    <span class="vdp-owner-cell" title="Created by {{ site.author }}">
-      <img
-        class="vdp-author-avatar"
-        src="{{ site.author.profile.image.url }}"
-        alt="{{ site.author.username }}"
-      />
-      <span class="vdp-cell-sub">{{ site.author|title }}</span>
-    </span>
+  <!-- Column 4: latest SpiderLog.items_scraped (annotated as last_log_items_scraped) -->
+  <td class="vdp-nowrap vdp-col-center vdp-stat-cell">
+    {% if site.last_log_items_scraped %}
+    <span class="vdp-stat-num" title="Latest spider log">{{ site.last_log_items_scraped }}</span>
     {% else %}
     <span class="vdp-cell-muted">—</span>
     {% endif %}
   </td>
 
-  <td class="vdp-nowrap">
-    <span class="vdp-cell-date">{{ site.date_created|timezone:'US/Eastern'|date:'Y-m-d' }}</span>
+  <!-- Column 5: latest log/scrape timestamp via target_site_last_run filter -->
+  <td class="vdp-nowrap vdp-col-left">
+    <span class="vdp-cell-date">{{ site|target_site_last_run }}</span>
+  </td>
+
+  <!-- Column 6: icon-only; full exported_feed filename on targetsite_detail.html -->
+  <td class="vdp-col-center">
+    {% if site.exported_feed %}
+    <span class="vdp-exported-yes" title="Exported: {{ site.exported_feed }}">
+      <i class="fa fa-circle-check" aria-hidden="true"></i>
+      <span class="vdp-sr-only">Exported</span>
+    </span>
+    {% else %}
+    <span class="vdp-cell-muted" title="Not exported yet">—</span>
+    {% endif %}
   </td>
 
   <td class="vdp-table-actions-cell">
