@@ -24,7 +24,7 @@ class OmniautoSpider(scrapy.Spider):
     VDP slugs live under ``/Inventory/{year}-{make}-{model}-{trim}-{vin}``.
     """
 
-    name = 'omni_auto'
+    name = 'omniauto'
     domain_name = ''
 
     custom_settings = {
@@ -79,7 +79,7 @@ class OmniautoSpider(scrapy.Spider):
                 break
         if not site_id:
             self.logger.warning(
-                'omni_auto: siteID not found for %s (check www vs non-www site_url)',
+                'omniauto: siteID not found for %s (check www vs non-www site_url)',
                 self.url,
             )
             return

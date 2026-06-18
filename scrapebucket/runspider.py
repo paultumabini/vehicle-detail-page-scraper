@@ -80,8 +80,8 @@ def crawl(arg: str):
         _safe_reactor_stop()
         return
 
-    # Single-spider mode: match by Scrapy ``name`` (e.g. ``omni_auto``), not class name
-    # (``OmniautoSpider`` would not match ``omni_autospider``).
+    # Single-spider mode: match by Scrapy ``name`` (e.g. ``omniauto``), not class name
+    # (``OmniautoSpider`` would not match ``omniautospider``).
     ran = False
     # Runnable-only rows from ``match_spiders``; no extra status/account checks here.
     for spider, url, domain, _status in match_spiders(TargetSite, settings):

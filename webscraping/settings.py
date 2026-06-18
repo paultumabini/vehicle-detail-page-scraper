@@ -198,8 +198,9 @@ REST_FRAMEWORK = {
 
 LANGUAGE_CODE = 'en-us'
 TIME_ZONE = 'UTC'
-# User-facing datetimes — keep in sync with CRON_TZ in crontab.prod.
-DISPLAY_TIME_ZONE = 'America/New_York'
+# Naive datetimes in the DB are UTC (USE_TZ=False). User-facing display timezone —
+# keep in sync with CRON_TZ in crontab.prod.
+DEFAULT_TIME_ZONE = 'America/New_York'
 USE_I18N = True
 # True is recommended for new deployments; project historically used False to
 # avoid naive-datetime warnings—migrate carefully if you flip this.
@@ -226,6 +227,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 from django.templatetags.static import static
 from django.urls import reverse_lazy
+
 
 UNFOLD = {
     'SITE_TITLE': 'VDP Scraper',

@@ -100,11 +100,15 @@
   <h5 class="vdp-info-section-title">Operations</h5>
   <div class="vdp-accordion">
     <details class="vdp-accordion__item">
-      <summary class="vdp-accordion__trigger">Last Run shows &ldquo;running&hellip;&rdquo;</summary>
+      <summary class="vdp-accordion__trigger">What does the Last Run column mean?</summary>
       <div class="vdp-accordion__panel">
         <p class="mb-0">
-          A scrape is still in progress. Wait for the status to finish before
-          downloading CSV or relying on API data for that target.
+          <strong>Last Run</strong> is the most recent crawl-related timestamp we
+          have for that target — from spider logs or inventory writes. It updates
+          after a scheduled crawl finishes, not while one is in progress. A date
+          means the last attempt completed (even if it scraped zero items).
+          <strong>&mdash;</strong> means no crawl has finished yet. Use the
+          <strong>Status</strong> column for Pending, Paused, or Active.
         </p>
       </div>
     </details>
@@ -124,8 +128,8 @@
       <summary class="vdp-accordion__trigger">Still need help?</summary>
       <div class="vdp-accordion__panel">
         <p class="mb-0">
-          Email
-          <a href="mailto:paultumabini@gmail.com" class="vdp-info-link">paultumabini@gmail.com</a>
+          Contact
+          <a href="https://github.com/paultumabini" class="vdp-info-link" target="_blank" rel="noopener noreferrer">@paultumabini</a>
           with the target site domain, web provider, and a short description of the issue.
         </p>
       </div>

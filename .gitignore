@@ -169,8 +169,3 @@ fixtures/*
 /local/backups/
 .vscode/
 .prettierignore
-
-# Company infrastructure (do not push to personal remotes)
-/devops/
-crontab.prod
-crontab.staging

@@ -4,7 +4,10 @@
   vdp_client_table.js — lightweight client-side table (no jQuery / DataTables).
 
   Used for target sites and scrape detail pages where all rows are already in the DOM.
-  Injects toolbar/footer chrome; persists page/search/sort in localStorage.
+  Injects toolbar/footer chrome; persists sort/page length in localStorage (search optional).
+
+  draw() replaces tbody with the current page only — allRows keeps the full server render.
+  Re-init must call destroy(true) so cloneNode does not capture a partial tbody.
 
   Row delete on target sites still uses full-page POST + redirect — not auto-synced;
   call removeRow() here if inline delete without reload is added later.
@@ -14,7 +17,8 @@ class VdpClientTable {
   constructor(tableEl, options = {}) {
     if (!tableEl) return null;
     if (tableEl._vdpTable) {
-      tableEl._vdpTable.destroy(false);
+      // Restore full tbody from cached rows — draw() only keeps the current page in the DOM.
+      tableEl._vdpTable.destroy(true);
     }
 
     this.table = tableEl;
@@ -28,12 +32,18 @@ class VdpClientTable {
       exactColumnFilters: new Set(options.exactColumnFilters ?? []),
       initialColumnFilters: options.initialColumnFilters ?? {},
       onDraw: options.onDraw ?? options.footerCallback ?? null,
+      // Target Sites opts out of search persistence — stale terms hid all but one row.
+      persistSearch: options.persistSearch !== false,
+      resetPageIndexOnLoad: options.resetPageIndexOnLoad === true,
+      minPageLength: options.minPageLength ?? 1,
     };
 
     this._pageLength = this.options.pageLength;
-    this.allRows = Array.from(this.tbody.querySelectorAll('tr')).map(function (tr) {
-      return tr.cloneNode(true);
-    });
+    this.allRows = Array.from(this.tbody.querySelectorAll('tr')).map(
+      function (tr) {
+        return tr.cloneNode(true);
+      },
+    );
     this.columnSearches = {};
     this.globalSearch = '';
     this.sortCol = null;
@@ -63,7 +73,13 @@ class VdpClientTable {
     const self = this;
     return {
       search: function (value) {
-        self.columnSearches[index] = value ?? '';
+        const term = value ?? '';
+        // Empty filter must remove the key — '' is falsy in draw() but leaving the key is misleading.
+        if (term) {
+          self.columnSearches[index] = term;
+        } else {
+          delete self.columnSearches[index];
+        }
         return self._chainApi();
       },
     };
@@ -161,12 +177,27 @@ class VdpClientTable {
 
   loadState() {
     try {
-      const raw = localStorage.getItem('vdp-table:' + this.options.stateSaveKey);
+      const raw = localStorage.getItem(
+        'vdp-table:' + this.options.stateSaveKey,
+      );
       if (!raw) return;
       const state = JSON.parse(raw);
-      if (state.pageLength) this._pageLength = state.pageLength;
-      if (state.pageIndex != null) this.pageIndex = state.pageIndex;
-      if (state.globalSearch) this.globalSearch = state.globalSearch;
+      if (state.pageLength) {
+        // Target Sites sets minPageLength so a saved value of 1 cannot strand one visible row.
+        this._pageLength = Math.max(
+          parseInt(state.pageLength, 10) || this._pageLength,
+          this.options.minPageLength,
+        );
+      }
+      if (this.options.resetPageIndexOnLoad) {
+        this.pageIndex = 0;
+      } else if (state.pageIndex != null) {
+        this.pageIndex = state.pageIndex;
+      }
+      // Target Sites passes persistSearch: false — toolbar search always starts empty.
+      if (this.options.persistSearch && state.globalSearch) {
+        this.globalSearch = state.globalSearch;
+      }
       if (state.sortCol != null) this.sortCol = state.sortCol;
       if (state.sortDir) this.sortDir = state.sortDir;
     } catch (_err) {
@@ -180,7 +211,8 @@ class VdpClientTable {
       JSON.stringify({
         pageLength: this._pageLength,
         pageIndex: this.pageIndex,
-        globalSearch: this.globalSearch,
+        globalSearch: this.options.persistSearch ? this.globalSearch : '',
+        // When persistSearch is false, do not write search back — keeps localStorage small/clean.
         sortCol: this.sortCol,
         sortDir: this.sortDir,
       }),
@@ -352,12 +384,7 @@ class VdpClientTable {
       this.infoEl.textContent = 'No matching entries';
     } else {
       this.infoEl.textContent =
-        'Showing ' +
-        (start + 1) +
-        '–' +
-        (start + shown) +
-        ' of ' +
-        total;
+        'Showing ' + (start + 1) + '–' + (start + shown) + ' of ' + total;
     }
 
     this.renderPaging(pages);
@@ -370,7 +397,9 @@ class VdpClientTable {
       function (th, index) {
         th.classList.remove('vdp-sorted-asc', 'vdp-sorted-desc');
         if (index === this.sortCol) {
-          th.classList.add(this.sortDir === 'asc' ? 'vdp-sorted-asc' : 'vdp-sorted-desc');
+          th.classList.add(
+            this.sortDir === 'asc' ? 'vdp-sorted-asc' : 'vdp-sorted-desc',
+          );
         }
       }.bind(this),
     );

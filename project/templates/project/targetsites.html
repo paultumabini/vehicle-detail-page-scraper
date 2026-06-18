@@ -18,14 +18,15 @@
       <div class="vdp-filter-bar">
         <div>
           <label for="scrape-status" class="vdp-filter-label">Status</label>
-          {# Default Active — synced with TARGET_SITES_DEFAULT_STATUS in main.js #}
+          {# Default Active in JS (resolveTargetSitesDefaultStatus) — falls back to All if none Active. #}
           <select id="scrape-status" class="vdp-filter-select">
             <option value="">All</option>
-            {% with sites|get_field_values:'status' as statuses %}
-              {% for status in statuses %}
-              <option value="{{ status }}"{% if status == 'Active' %} selected{% endif %}>{{ status }}</option>
-              {% endfor %}
-            {% endwith %}
+            {# Fixed list — get_field_values only returns statuses present in the current queryset. #}
+            <option value="Active">Active</option>
+            <option value="Inactive">Inactive</option>
+            <option value="Pending">Pending</option>
+            <option value="Paused">Paused</option>
+            <option value="Failed">Failed</option>
           </select>
         </div>
 
@@ -44,18 +45,29 @@
 </div>
 
 <div class="vdp-card p-0 overflow-hidden target-sites-table-card">
+      <!--
+        Target Sites list — 8 columns (lean ops view).
+
+        Column order (must match partials/target_site_row.html and main.js filter indices):
+          0 Entry | 1 Status | 2 Site Name | 3 Provider
+          4 Items Scraped | 5 Last Run | 6 Exported | 7 Actions
+
+        Omitted from list (available on site detail): site URL, Owner, Create Date.
+        Status uses dot indicators; Exported uses icon + tooltip (full filename on detail).
+
+        Use HTML comments in table templates — not Django template comments on multiple lines.
+      -->
       <table id="dealers-list-table" class="w-full vdp-data-table">
         <thead>
           <tr>
-            <th class="text-center" scope="col">Entry#</th>
-            <th>Site Name</th>
-            <th>Site URL</th>
-            <th>Provider</th>
-            <th>Status</th>
-            <th>Last Run</th>
-            <th>Owner</th>
-            <th>Create Date</th>
-            <th class="text-center">Actions</th>
+            <th class="vdp-col-center" scope="col">Entry#</th>
+            <th class="vdp-col-center" scope="col">Status</th>
+            <th class="vdp-col-left">Site Name</th>
+            <th class="vdp-col-left">Provider</th>
+            <th class="vdp-col-center" scope="col">Items Scraped</th>
+            <th class="vdp-col-left">Last Run</th>
+            <th class="vdp-col-center" scope="col">Exported</th>
+            <th class="vdp-col-center">Actions</th>
           </tr>
         </thead>
         <tbody id="sites_list">
@@ -63,12 +75,59 @@
           {% include 'project/partials/target_site_row.html' %}
           {% empty %}
           <tr>
-            <td colspan="9" class="vdp-empty-row">No target sites for this project.</td>
+            <td colspan="8" class="vdp-empty-row">No target sites for this project.</td>
           </tr>
           {% endfor %}
         </tbody>
   </table>
 </div>
+
+{% if recent_deactivations %}
+{# Audit panel below the ops table — keeps filter + table as one uninterrupted block. #}
+<div class="vdp-card mt-4 vdp-recent-deactivations">
+  <details>
+    <summary class="vdp-recent-deactivations__summary">
+      Recent deactivations (last {{ recent_deactivation_days }} days)
+      <span class="vdp-recent-deactivations__count">{{ recent_deactivations|length }}</span>
+    </summary>
+    <table class="w-full vdp-data-table vdp-data-table--compact vdp-recent-deactivations__table">
+      <thead>
+        <tr>
+          <th scope="col">When</th>
+          <th scope="col">Entry</th>
+          <th scope="col">Site</th>
+          <th scope="col">Change</th>
+          <th scope="col">Source</th>
+          <th scope="col">Detail</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for event in recent_deactivations %}
+        <tr>
+          <td class="vdp-nowrap">
+            {{ event.created_at|timezone:'US/Eastern'|date:'Y-m-d H:i' }}
+          </td>
+          <td class="vdp-nowrap">
+            <a
+              class="vdp-table-link"
+              href="{% url 'site-detail' event.target_site.project.name event.target_site.pk %}"
+            >{{ event.target_site.entry_code }}</a>
+          </td>
+          <td>
+            {{ event.target_site.site_name.account_name|default:event.target_site.site_id }}
+          </td>
+          <td class="vdp-nowrap">
+            {{ event.from_status|default:"—" }} → {{ event.to_status }}
+          </td>
+          <td>{{ event.source|status_event_source_label }}</td>
+          <td>{{ event.detail|default:"—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </details>
+</div>
+{% endif %}
 
 {% endblock content %}
 

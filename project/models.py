@@ -1,4 +1,5 @@
 from django.contrib.auth.models import User
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.urls import reverse
 
@@ -67,6 +68,10 @@ class Account(models.Model):
         ('INACTIVE', 'INACTIVE'),
         ('DELETED', 'DELETED'),
     )
+    VDP_DATA_SOURCE = (
+        ('SCRAPE', 'Requires scrape setup'),
+        ('DIRECT_FEED', 'Direct feed'),
+    )
 
     account_status = models.CharField(max_length=10, choices=ACCOUNT_STATUS)
     account_id = models.IntegerField(primary_key=True)
@@ -108,6 +113,38 @@ class Account(models.Model):
     )
     # Manual/admin/in-app edits use date_modified only — do not set aim_last_synced_at.
 
+    # Inbound VDP supply (operator-managed; not AIM sync).
+    #
+    # DIRECT_FEED means no scrape target is needed. Two common paths:
+    #   (a) direct_feed_file only — individual file supplied by an external provider
+    #   (b) batch_feed_source — VDP parsed from a shared multi-dealer batch file
+    #   (c) both — batch is upstream; direct_feed_file is the per-dealer file produced from it
+    #
+    # Distinct from TargetSite.exported_feed (scrape output via VdpUrlFtpExportPipeline).
+    vdp_data_source = models.CharField(
+        max_length=20,
+        choices=VDP_DATA_SOURCE,
+        default='SCRAPE',
+        help_text=(
+            'Requires scrape setup, or direct FTP feed (individual file and/or batch source).'
+        ),
+    )
+    direct_feed_file = models.CharField(
+        max_length=200,
+        blank=True,
+        null=True,
+        help_text=(
+            'Individual VDP feed file — from an external provider, or derived after '
+            'parsing a batch feed.'
+        ),
+    )
+    batch_feed_source = models.CharField(
+        max_length=200,
+        blank=True,
+        null=True,
+        help_text="Upstream shared batch file when this dealer's VDP is parsed from a batch feed.",
+    )
+
     note = models.TextField(blank=True, null=True)
     date_created = models.DateTimeField(auto_now_add=True, null=True, blank=True)
     date_modified = models.DateTimeField(auto_now=True, null=True)
@@ -134,16 +171,165 @@ class Account(models.Model):
         """True when sync_accounts has written this row; drives account_form.html labels."""
         return self.aim_last_synced_at is not None
 
+    @property
+    def needs_scrape_setup(self) -> bool:
+        """Dashboard need_setup + Accounts VDP setup column (SCRAPE without TargetSite)."""
+        return self.vdp_data_source == 'SCRAPE'
+
+    @property
+    def has_direct_feed(self) -> bool:
+        """Excludes account from need_setup; shown as Direct feed in Accounts table."""
+        return self.vdp_data_source == 'DIRECT_FEED'
+
+    @property
+    def has_direct_feed_file(self) -> bool:
+        return bool((self.direct_feed_file or '').strip())
+
+    @property
+    def has_batch_feed_source(self) -> bool:
+        return bool((self.batch_feed_source or '').strip())
+
+    @property
+    def direct_feed_from_provider(self) -> bool:
+        """Individual file from an external provider (no batch upstream)."""
+        return (
+            self.has_direct_feed
+            and self.has_direct_feed_file
+            and not self.has_batch_feed_source
+        )
+
+    @property
+    def direct_feed_from_batch(self) -> bool:
+        """VDP originates from a shared batch file (with or without a derived individual file)."""
+        return self.has_direct_feed and self.has_batch_feed_source
+
+    def direct_feed_display_title(self) -> str:
+        """Tooltip for Accounts table — direct feed file and/or batch source."""
+        if not self.has_direct_feed:
+            return ''
+        parts = ['Direct feed — no scrape setup required']
+        if self.has_direct_feed_file:
+            parts.append(f'File: {self.direct_feed_file.strip()}')
+        if self.has_batch_feed_source:
+            parts.append(f'Batch: {self.batch_feed_source.strip()}')
+        return ' · '.join(parts)
+
+    def clean(self):
+        """Enforce feed fields match vdp_data_source (admin + AccountUpdateForm)."""
+        super().clean()
+        has_individual = self.has_direct_feed_file
+        has_batch = self.has_batch_feed_source
+
+        if self.vdp_data_source == 'SCRAPE':
+            if has_individual or has_batch:
+                raise ValidationError(
+                    'Direct feed fields must be empty when scrape setup is required.'
+                )
+        elif self.vdp_data_source == 'DIRECT_FEED':
+            if not has_individual and not has_batch:
+                raise ValidationError(
+                    'Set an individual direct feed file, a batch feed source, or both.'
+                )
+
+    def _previous_account_status(self) -> str | None:
+        """DB value before this save — used to detect INACTIVE/DELETED → ACTIVE transitions."""
+        if self.pk is None:
+            return None
+        return (
+            Account.objects.filter(pk=self.pk)
+            .values_list('account_status', flat=True)
+            .first()
+        )
+
+    def inactivate_linked_target_sites(self) -> int:
+        """
+        Pause configured scrape setups when this account is inactive/deleted.
+
+        Called from ``save()`` after manual admin edits and AIM sync (``update_or_create``
+        also hits ``save()``). Sites already Inactive (operator choice) are left alone.
+        ``inactive_due_to_account`` marks rows we change so they can be restored if the
+        account returns to ACTIVE.
+        """
+        if self.account_status not in ('INACTIVE', 'DELETED'):
+            return 0
+        sites = list(
+            TargetSite.objects.filter(site_name_id=self.account_id)
+            .exclude(status='Inactive')
+            .values('pk', 'status')
+        )
+        if not sites:
+            return 0
+        site_ids = [row['pk'] for row in sites]
+        # queryset.update() bypasses TargetSite.save — log here, not in the model hook.
+        TargetSite.objects.filter(pk__in=site_ids).update(
+            status='Inactive',
+            inactive_due_to_account=True,
+        )
+        TargetSiteStatusEvent.objects.bulk_create(
+            [
+                TargetSiteStatusEvent(
+                    target_site_id=row['pk'],
+                    from_status=row['status'],
+                    to_status='Inactive',
+                    source='account_sync',
+                    detail=f'AIM account → {self.account_status}',
+                )
+                for row in sites
+            ]
+        )
+        return len(sites)
+
+    def activate_linked_target_sites(self) -> int:
+        """
+        Re-enable scrape setups that were auto-paused when this account returns to ACTIVE.
+
+        Only touches sites flagged by ``inactivate_linked_target_sites``; operator-set
+        Inactive sites are unchanged.
+        """
+        if self.account_status != 'ACTIVE':
+            return 0
+        sites = list(
+            TargetSite.objects.filter(
+                site_name_id=self.account_id,
+                inactive_due_to_account=True,
+            ).values('pk', 'status')
+        )
+        if not sites:
+            return 0
+        site_ids = [row['pk'] for row in sites]
+        # queryset.update() bypasses TargetSite.save — log here, not in the model hook.
+        TargetSite.objects.filter(pk__in=site_ids).update(
+            status='Active',
+            inactive_due_to_account=False,
+        )
+        TargetSiteStatusEvent.objects.bulk_create(
+            [
+                TargetSiteStatusEvent(
+                    target_site_id=row['pk'],
+                    from_status=row['status'],
+                    to_status='Active',
+                    source='account_reactivate',
+                    detail='AIM account → ACTIVE',
+                )
+                for row in sites
+            ]
+        )
+        return len(sites)
+
     def save(self, *args, **kwargs):
+        previous_status = self._previous_account_status()
         # Inactive/deleted accounts should never show the "New" badge or review action.
         if self.account_status in ('INACTIVE', 'DELETED'):
             self.is_new_account = False
         super().save(*args, **kwargs)
-        # Keep TargetSite.status aligned with AIM account (runspider uses TargetSite.objects.runnable()).
-        if self.account_status == 'DELETED':
-            TargetSite.objects.filter(site_name_id=self.account_id).exclude(
-                status='Inactive'
-            ).update(status='Inactive')
+        # Mirror account_status onto linked TargetSite rows (see targetsite_detail.html).
+        if self.account_status in ('INACTIVE', 'DELETED'):
+            self.inactivate_linked_target_sites()
+        elif self.account_status == 'ACTIVE' and previous_status in (
+            'INACTIVE',
+            'DELETED',
+        ):
+            self.activate_linked_target_sites()
 
 
 class AccountSyncState(models.Model):
@@ -185,10 +371,13 @@ class TargetSiteQuerySet(models.QuerySet):
         """
         Sites eligible for scheduled crawls (``runspider``, ``match_spiders``).
 
-        ``status`` is the operator-facing on/off switch; excluding ``DELETED`` is a
-        belt-and-suspenders guard when AIM account and TargetSite status drift apart.
+        ``status`` is the operator-facing on/off switch. Inactive/deleted AIM
+        accounts are excluded even if a TargetSite row is still Active — a guard
+        when account and site status drift before ``Account.save()`` cascade runs.
         """
-        return self.filter(status='Active').exclude(site_name__account_status='DELETED')
+        return self.filter(status='Active').exclude(
+            site_name__account_status__in=('INACTIVE', 'DELETED')
+        )
 
 
 class TargetSiteManager(models.Manager.from_queryset(TargetSiteQuerySet)):
@@ -206,6 +395,14 @@ class TargetSite(models.Model):
         ('Paused', 'Paused'),
     )
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='Pending')
+    # Set by Account.inactivate_linked_target_sites; cleared on reactivation or manual edit.
+    inactive_due_to_account = models.BooleanField(
+        default=False,
+        help_text=(
+            'True when status was auto-set to Inactive because the linked account '
+            'is inactive/deleted; cleared when the account returns to ACTIVE.'
+        ),
+    )
     entry_code = models.CharField(
         max_length=20, blank=True, default='', verbose_name='entry#'
     )
@@ -264,6 +461,31 @@ class TargetSite(models.Model):
             kwargs={'project_name': project_name, 'pk': self.pk},
         )
 
+    def _previous_status(self) -> str | None:
+        if self.pk is None:
+            return None
+        return (
+            TargetSite.objects.filter(pk=self.pk)
+            .values_list('status', flat=True)
+            .first()
+        )
+
+    def save(self, *args, **kwargs):
+        previous_status = self._previous_status()
+        # Operator changed status away from Inactive — no longer account-driven.
+        if self.status != 'Inactive':
+            self.inactive_due_to_account = False
+        super().save(*args, **kwargs)
+        # Form/admin edits only — account cascade uses queryset.update() above.
+        if previous_status is not None and previous_status != self.status:
+            TargetSiteStatusEvent.record(
+                target_site=self,
+                from_status=previous_status,
+                to_status=self.status,
+                source='manual',
+                actor=self.updated_by,
+            )
+
     # def save(self, force_insert=False, force_update=False):
     #     self.entry_code = ''
     #     existing_entry_code = TargetSite.objects.all().order_by('-entry_code')
@@ -274,6 +496,79 @@ class TargetSite(models.Model):
     #         new_entry_code = 1
     #     self.entry_code = f'SB-{new_entry_code}'
     #     super().save(force_insert, force_update)
+
+
+class TargetSiteStatusEvent(models.Model):
+    """
+    Append-only audit log for TargetSite.status changes.
+
+    Written from three paths:
+      - TargetSite.save() → manual (frontend form / admin)
+      - Account.inactivate_linked_target_sites() → account_sync (AIM sync cascade)
+      - Account.activate_linked_target_sites() → account_reactivate
+
+    Migration 0016 seeds historical rows for sites that were already Inactive;
+    those use detail prefix ``Historical backfill —``.
+    """
+
+    SOURCE_CHOICES = (
+        ('manual', 'Manual'),
+        ('account_sync', 'Account sync'),
+        ('account_reactivate', 'Account reactivated'),
+        ('system', 'System'),
+    )
+
+    target_site = models.ForeignKey(
+        TargetSite,
+        on_delete=models.CASCADE,
+        related_name='status_events',
+    )
+    from_status = models.CharField(max_length=10, blank=True, default='')
+    to_status = models.CharField(max_length=10)
+    source = models.CharField(max_length=20, choices=SOURCE_CHOICES)
+    detail = models.CharField(max_length=255, blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    actor = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='target_site_status_events',
+    )
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Target site status event'
+        verbose_name_plural = 'Target site status events'
+
+    def __str__(self):
+        return (
+            f'{self.target_site_id}: {self.from_status or "—"} → {self.to_status} '
+            f'({self.get_source_display()})'
+        )
+
+    @classmethod
+    def record(
+        cls,
+        *,
+        target_site,
+        from_status,
+        to_status,
+        source,
+        detail='',
+        actor=None,
+    ):
+        # Account cascade uses bulk_create instead — this is for TargetSite.save() only.
+        if from_status == to_status:
+            return None
+        return cls.objects.create(
+            target_site=target_site,
+            from_status=from_status or '',
+            to_status=to_status,
+            source=source,
+            detail=detail,
+            actor=actor,
+        )
 
 
 class Scrape(models.Model):

@@ -24,11 +24,13 @@ const ACCOUNTS_STATUS_LABELS = {
   DELETED: 'Deleted',
 };
 
-/** Scraping Setup filter labels — override Account Status label in the header count card. */
+/** VDP setup filter labels — keys match account_row .dt-val and ?setup= query param. */
 const ACCOUNTS_SETUP_LABELS = {
   '': null,
+  covered: 'VDP covered',  // API/deep link only — not in filter-setup dropdown
   configured: 'Configured',
   'not-configured': 'Need setup',
+  'direct-feed': 'Direct feed',
 };
 
 /** Header count card — mirrors active filters and datatable recordsFiltered. */
@@ -42,9 +44,7 @@ function updateAccountsTotalCard(statusFilter, setupFilter, count) {
   countEl.textContent = count != null ? count : 0;
   // Setup filter takes precedence over Account Status in the header label.
   labelEl.textContent =
-    ACCOUNTS_SETUP_LABELS[setup] ||
-    ACCOUNTS_STATUS_LABELS[status] ||
-    'Total';
+    ACCOUNTS_SETUP_LABELS[setup] || ACCOUNTS_STATUS_LABELS[status] || 'Total';
 }
 
 function initAccountsTable() {
@@ -75,10 +75,10 @@ function initAccountsTable() {
     draw: 1,
     pageLength: state.pageLength || 25,
     pageIndex: state.pageIndex || 0,
-    orderCol: state.orderCol != null ? state.orderCol : 1,
+    orderCol: state.orderCol != null ? state.orderCol : 2,
     orderDir: state.orderDir || 'asc',
     globalSearch: '',
-    columnFilters: { 1: '', 3: ACCOUNTS_DEFAULT_STATUS, 4: '' },
+    columnFilters: { 0: ACCOUNTS_DEFAULT_STATUS, 2: '', 4: '' },
     recordsFiltered: 0,
     pages: 1,
   };
@@ -90,7 +90,7 @@ function initAccountsTable() {
 
   const urlParams = new URLSearchParams(window.location.search);
   const setupParam = urlParams.get('setup');
-  // columns[4] → accounts_datatable_json setup_filter (configured | not-configured).
+  // columns[4] → accounts_datatable_json setup_filter (configured | not-configured | direct-feed).
   if (setupParam && ACCOUNTS_SETUP_LABELS[setupParam] && ui.setup) {
     ui.setup.value = setupParam;
     model.columnFilters[4] = setupParam;
@@ -100,13 +100,13 @@ function initAccountsTable() {
   /** Mirror filter dropdowns → model.columnFilters (source of truth for buildParams). */
   function syncFiltersFromUI() {
     if (ui.account) {
-      model.columnFilters[3] = ui.account.value;
+      model.columnFilters[0] = ui.account.value;
     }
     if (ui.setup) {
       model.columnFilters[4] = ui.setup.value;
     }
     if (ui.isNew) {
-      model.columnFilters[1] = ui.isNew.value;
+      model.columnFilters[2] = ui.isNew.value;
     }
   }
 
@@ -149,15 +149,7 @@ function initAccountsTable() {
     }
     tbody.innerHTML = rows
       .map(function (cells) {
-        return (
-          '<tr>' +
-          cells
-            .map(function (html) {
-              return '<td>' + html + '</td>';
-            })
-            .join('') +
-          '</tr>'
-        );
+        return '<tr>' + cells.join('') + '</tr>';
       })
       .join('');
     // Rows are injected via innerHTML — htmx must process them for hx-post / hx-confirm.
@@ -230,7 +222,7 @@ function initAccountsTable() {
 
   function saveState() {
     localStorage.setItem(
-      'vdp-accounts',
+      'vdp-accounts-v2',
       JSON.stringify({
         pageLength: model.pageLength,
         pageIndex: model.pageIndex,
@@ -266,7 +258,7 @@ function initAccountsTable() {
           }
         }
         updateAccountsTotalCard(
-          model.columnFilters[3],
+          model.columnFilters[0],
           model.columnFilters[4],
           payload.recordsFiltered, // same total as table footer "Showing … of N"
         );
@@ -303,7 +295,7 @@ function initAccountsTable() {
   });
 
   ui.account.addEventListener('change', function () {
-    model.columnFilters[3] = this.value;
+    model.columnFilters[0] = this.value;
     model.pageIndex = 0;
     fetchPage();
   });
@@ -313,7 +305,7 @@ function initAccountsTable() {
     fetchPage();
   });
   ui.isNew.addEventListener('change', function () {
-    model.columnFilters[1] = this.value;
+    model.columnFilters[2] = this.value;
     model.pageIndex = 0;
     fetchPage();
   });
@@ -358,7 +350,7 @@ function initAccountsTable() {
 
 function loadAccountsState() {
   try {
-    const raw = localStorage.getItem('vdp-accounts');
+    const raw = localStorage.getItem('vdp-accounts-v2');
     return raw ? JSON.parse(raw) : {};
   } catch (_err) {
     return {};

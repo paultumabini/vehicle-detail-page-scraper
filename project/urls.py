@@ -46,6 +46,7 @@ urlpatterns = [
     ),
     path('api-docs/', views.api_docs, name='api-docs'),
     path('help/', views.help, name='help'),
+    path('spider-templates/', views.spider_templates_view, name='spider-templates'),
     path('scrape-data-json/', views.scrape_data_json, name='scrape-json'),
     path('spider-log-json/', views.spider_logs_json, name='log-json'),
     path('web-provider-json/', views.web_providers_json, name='web-provider-json'),

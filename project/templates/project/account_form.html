@@ -1,13 +1,13 @@
 {% extends 'project/base.html' %}
 {% load tz %}
 
-{#
+<!--
   Account edit page (AccountUpdateView).
 
   Read-only header uses Account.is_aim_synced (aim_last_synced_at):
     - AIM row  → "From AIM sync" + Last synced + inventory stats
     - Local row → "Account details" + Created / Last updated (manual/admin add)
-#}
+-->
 
 {% block title %}VDP Scraper | Edit Account{% endblock %}
 {% block page_heading %}Edit Account{% endblock %}
@@ -53,7 +53,7 @@
         </dd>
       </div>
       {% if object.is_aim_synced %}
-      {# Inventory + Last synced — only meaningful for AIM-fed accounts #}
+      <!-- Inventory + Last synced — only meaningful for AIM-fed accounts -->
       <div>
         <dt>New active</dt>
         <dd>{{ object.new_active_stats|default:"—" }}</dd>
@@ -67,7 +67,7 @@
         <dd>{{ object.aim_last_synced_at|timezone:'US/Eastern'|date:'Y-m-d H:i' }}</dd>
       </div>
       {% else %}
-      {# Locally added account — date_modified is edit time, not AIM sync #}
+      <!-- Locally added account — date_modified is edit time, not AIM sync -->
       <div>
         <dt>Created</dt>
         <dd>
@@ -139,6 +139,50 @@
       {% endif %}
     </div>
 
+    <h5 class="vdp-scrape-form__section-title">VDP supply</h5>
+    <!-- Operator-managed — not AIM sync. Drives Accounts VDP setup + dashboard KPIs. -->
+    <p class="vdp-help m-0">
+      Mark accounts that receive VDP data by FTP direct feed so they are excluded from scrape setup.
+    </p>
+
+    <div>
+      <label for="{{ form.vdp_data_source.id_for_label }}" class="vdp-label">{{ form.vdp_data_source.label }}</label>
+      {{ form.vdp_data_source }}
+      {% if form.vdp_data_source.help_text %}
+      <p class="vdp-help">{{ form.vdp_data_source.help_text }}</p>
+      {% endif %}
+      {% if form.vdp_data_source.errors %}
+      <p class="vdp-error">{{ form.vdp_data_source.errors|join:', ' }}</p>
+      {% endif %}
+    </div>
+
+    <div
+      id="vdp-direct-feed-fields"
+      class="vdp-direct-feed-fields space-y-4{% if form.vdp_data_source.value != 'DIRECT_FEED' %} hidden{% endif %}"
+    >
+      <div>
+        <label for="{{ form.direct_feed_file.id_for_label }}" class="vdp-label">{{ form.direct_feed_file.label }}</label>
+        {{ form.direct_feed_file }}
+        {% if form.direct_feed_file.help_text %}
+        <p class="vdp-help">{{ form.direct_feed_file.help_text }}</p>
+        {% endif %}
+        {% if form.direct_feed_file.errors %}
+        <p class="vdp-error">{{ form.direct_feed_file.errors|join:', ' }}</p>
+        {% endif %}
+      </div>
+
+      <div>
+        <label for="{{ form.batch_feed_source.id_for_label }}" class="vdp-label">{{ form.batch_feed_source.label }}</label>
+        {{ form.batch_feed_source }}
+        {% if form.batch_feed_source.help_text %}
+        <p class="vdp-help">{{ form.batch_feed_source.help_text }}</p>
+        {% endif %}
+        {% if form.batch_feed_source.errors %}
+        <p class="vdp-error">{{ form.batch_feed_source.errors|join:', ' }}</p>
+        {% endif %}
+      </div>
+    </div>
+
     <div>
       <label for="{{ form.note.id_for_label }}" class="vdp-label">{{ form.note.label }}</label>
       {{ form.note }}
@@ -162,4 +206,22 @@
     </div>
   </form>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  // Toggle direct-feed fields when vdp_data_source changes (account_form.html).
+  document.addEventListener('DOMContentLoaded', function () {
+    const source = document.getElementById('{{ form.vdp_data_source.id_for_label }}');
+    const feedFields = document.getElementById('vdp-direct-feed-fields');
+    if (!source || !feedFields) return;
+
+    function toggleDirectFeedFields() {
+      feedFields.classList.toggle('hidden', source.value !== 'DIRECT_FEED');
+    }
+
+    source.addEventListener('change', toggleDirectFeedFields);
+    toggleDirectFeedFields();
+  });
+</script>
 {% endblock %}

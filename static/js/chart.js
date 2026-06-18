@@ -24,6 +24,8 @@ const VDP = {
   emeraldSoft: 'rgba(16, 185, 129, 0.15)',
   amber: '#f59e0b',
   amberSoft: 'rgba(245, 158, 11, 0.18)',
+  teal: '#14b8a6',
+  tealSoft: 'rgba(20, 184, 166, 0.18)',
   rose: '#f43f5e',
   slate: '#94a3b8',
   series: [
@@ -156,6 +158,13 @@ const scrapeVolumeTooltip = {
 
 /* ── Setup coverage (SSR data from home.html json_script) ─────── */
 
+/*
+  Account setup charts (dashboard):
+    chartSetupCoverage   — donut: VDP covered vs need setup (display-only)
+    chartSetupComparison — bars: active | configured | direct feed | need setup (clickable)
+  Counts from views._dashboard_stats(); bar links use setup.accounts_links.
+*/
+
 const readSetupData = () => {
   // Populated by {{ dashboard|json_script:"dashboard-setup-data" }} in home.html.
   const el = document.getElementById('dashboard-setup-data');
@@ -167,22 +176,41 @@ const readSetupData = () => {
   }
 };
 
+const SETUP_BAR_LINK_KEYS = ['active', 'configured', 'direct_feed', 'need_setup'];
+
+const setupChartNavigation = (setup, linkKeys) => ({
+  onHover(event, elements) {
+    const target = event.native?.target;
+    if (target) {
+      target.style.cursor = elements.length ? 'pointer' : 'default';
+    }
+  },
+  onClick(_event, elements) {
+    if (!elements.length) return;
+    const url = setup.accounts_links?.[linkKeys[elements[0].index]];
+    if (url) {
+      window.location.href = url;
+    }
+  },
+});
+
 const chartSetupCoverage = setup => {
-  // Donut: configured vs need_setup among ACTIVE accounts (mirrors Accounts page filter).
+  // Donut: VDP covered (scrape configured + direct feed) vs need setup among ACTIVE accounts.
   const canvas = document.getElementById('chartSetup__canvas');
   if (!canvas) return;
 
-  const configured = setup.configured_count || 0;
+  const covered = setup.covered_count || 0;
   const needSetup = setup.need_setup_count || 0;
-  const total = configured + needSetup;
+  const total = setup.active_account_count || covered + needSetup;
+  const coveredPct = total ? Math.round((covered / total) * 100) : 0;
 
   new Chart(canvas, {
     type: 'doughnut',
     data: {
-      labels: ['Configured', 'Need setup'],
+      labels: ['VDP covered', 'Need setup'],
       datasets: [
         {
-          data: [configured, needSetup],
+          data: [covered, needSetup],
           backgroundColor: [VDP.emerald, VDP.amber],
           borderColor: '#fff',
           borderWidth: 3,
@@ -208,22 +236,25 @@ const chartSetupCoverage = setup => {
     },
     plugins: [
       {
-        // Custom plugin — total ACTIVE accounts in the donut hole.
+        // Donut hole — active total + % VDP covered (display only; no segment links).
         id: 'centerText',
         beforeDraw(chart) {
           const { ctx, chartArea } = chart;
           if (!chartArea) return;
           const cx = (chartArea.left + chartArea.right) / 2;
-          const cy = (chartArea.top + chartArea.bottom) / 2 - 6;
+          const cy = (chartArea.top + chartArea.bottom) / 2;
           ctx.save();
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
           ctx.fillStyle = VDP.textDark;
           ctx.font = '600 1.65rem Inter, system-ui, sans-serif';
-          ctx.fillText(total.toLocaleString(), cx, cy);
-          ctx.fillStyle = VDP.text;
+          ctx.fillText(total.toLocaleString(), cx, cy - 10);
           ctx.font = '500 0.7rem Inter, system-ui, sans-serif';
-          ctx.fillText('active accounts', cx, cy + 22);
+          ctx.fillStyle = VDP.text;
+          ctx.fillText('active accounts', cx, cy + 10);
+          ctx.fillStyle = VDP.emerald;
+          ctx.font = '600 0.8rem Inter, system-ui, sans-serif';
+          ctx.fillText(`${coveredPct}% covered`, cx, cy + 28);
           ctx.restore();
         },
       },
@@ -232,33 +263,35 @@ const chartSetupCoverage = setup => {
 };
 
 const chartSetupComparison = setup => {
-  // Bar labels mirror dashboard KPI cards: Active accounts | Scrape sites | Need setup.
+  // Bar chart: Active | Configured | Direct feed | Need setup (mirrors KPI cards + legend links).
   const canvas = document.getElementById('chartCompare__canvas');
   if (!canvas) return;
 
   new Chart(canvas, {
     type: 'bar',
     data: {
-      labels: ['Active accounts', 'Scrape sites', 'Need setup'],
+      labels: ['Active accounts', 'Configured', 'Direct feed', 'Need setup'],
       datasets: [
         {
           label: 'Count',
           data: [
             setup.active_account_count || 0,
-            setup.active_site_count || 0,
+            setup.configured_count || 0,
+            setup.direct_feed_count || 0,
             setup.need_setup_count || 0,
           ],
-          backgroundColor: [VDP.skySoft, VDP.emeraldSoft, VDP.amberSoft],
-          borderColor: [VDP.sky, VDP.emerald, VDP.amber],
+          backgroundColor: [VDP.skySoft, VDP.emeraldSoft, VDP.tealSoft, VDP.amberSoft],
+          borderColor: [VDP.sky, VDP.emerald, VDP.teal, VDP.amber],
           borderWidth: 2,
           borderRadius: 8,
-          barThickness: 48,
+          barThickness: 40,
         },
       ],
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      ...setupChartNavigation(setup, SETUP_BAR_LINK_KEYS),
       plugins: {
         legend: { display: false },
         tooltip: {

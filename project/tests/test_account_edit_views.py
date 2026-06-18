@@ -34,6 +34,15 @@ class AccountUpdateViewTests(TestCase):
             site_url='https://old.example.com',
             web_provider=self.provider,
         )
+        self.form_data = {
+            'web_provider': self.provider.pk,
+            'account_manager': 'New Manager',
+            'site_url': 'https://new.example.com',
+            'vdp_data_source': 'SCRAPE',
+            'direct_feed_file': '',
+            'batch_feed_source': '',
+            'note': 'Updated via in-app form',
+        }
         self.url = reverse('account-edit', kwargs={'account_id': self.account.account_id})
 
     def test_anonymous_user_redirected_to_login(self):
@@ -58,6 +67,8 @@ class AccountUpdateViewTests(TestCase):
         self.assertIn('added locally', content)
         self.assertNotIn('From AIM sync', content)
         self.assertIn('Editable fields', content)
+        self.assertIn('VDP supply', content)
+        self.assertIn('VDP data source', content)
         self.assertIn('Save account', content)
 
     def test_staff_sees_aim_sync_section_for_synced_account(self):
@@ -75,15 +86,7 @@ class AccountUpdateViewTests(TestCase):
 
     def test_staff_can_update_account_and_redirects_to_accounts(self):
         self.client.force_login(self.staff)
-        response = self.client.post(
-            self.url,
-            {
-                'web_provider': self.provider.pk,
-                'account_manager': 'New Manager',
-                'site_url': 'https://new.example.com',
-                'note': 'Updated via in-app form',
-            },
-        )
+        response = self.client.post(self.url, self.form_data)
 
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.url, reverse('accounts'))
@@ -92,7 +95,45 @@ class AccountUpdateViewTests(TestCase):
         self.assertEqual(self.account.account_manager, 'New Manager')
         self.assertEqual(self.account.site_url, 'https://new.example.com')
         self.assertEqual(self.account.note, 'Updated via in-app form')
+        self.assertEqual(self.account.vdp_data_source, 'SCRAPE')
         self.assertEqual(self.account.modified_by, self.staff)
+
+    def test_staff_can_save_direct_feed_fields(self):
+        self.client.force_login(self.staff)
+        response = self.client.post(
+            self.url,
+            {
+                **self.form_data,
+                'vdp_data_source': 'DIRECT_FEED',
+                'direct_feed_file': 'dealer_88001_vdp.csv',
+                'batch_feed_source': 'provider_master_batch.csv',
+                'note': 'Parsed from batch',
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.account.refresh_from_db()
+        self.assertEqual(self.account.vdp_data_source, 'DIRECT_FEED')
+        self.assertEqual(self.account.direct_feed_file, 'dealer_88001_vdp.csv')
+        self.assertEqual(self.account.batch_feed_source, 'provider_master_batch.csv')
+
+    def test_direct_feed_requires_at_least_one_feed_field(self):
+        self.client.force_login(self.staff)
+        response = self.client.post(
+            self.url,
+            {
+                **self.form_data,
+                'vdp_data_source': 'DIRECT_FEED',
+                'direct_feed_file': '',
+                'batch_feed_source': '',
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            'Set an individual direct feed file, a batch feed source, or both.',
+        )
 
     def test_update_syncs_linked_target_site_web_provider(self):
         TargetSite.objects.create(
@@ -118,7 +159,7 @@ class AccountUpdateViewTests(TestCase):
             images=False,
             images_count=False,
         )
-        new_provider = Webprovider.objects.create(name='omni')
+        new_provider = Webprovider.objects.create(name='omniauto')
 
         self.client.force_login(self.staff)
         self.client.post(
@@ -127,13 +168,16 @@ class AccountUpdateViewTests(TestCase):
                 'web_provider': new_provider.pk,
                 'account_manager': '',
                 'site_url': '',
+                'vdp_data_source': 'SCRAPE',
+                'direct_feed_file': '',
+                'batch_feed_source': '',
                 'note': '',
             },
         )
 
         site = TargetSite.objects.get(site_id='edit-test.example.com')
-        self.assertEqual(site.web_provider, 'omni')
-        self.assertEqual(site.spider, 'omni_auto')
+        self.assertEqual(site.web_provider, 'omniauto')
+        self.assertEqual(site.spider, 'omniauto')
 
     def test_unknown_account_returns_404(self):
         self.client.force_login(self.staff)

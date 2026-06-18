@@ -38,6 +38,8 @@ class AccountsViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         content = response.content.decode()
         self.assertIn('accounts-table', content)
+        self.assertIn('AIM synced', content)
+        self.assertNotIn('>Last Synced<', content)
         self.assertIn('/accounts/datatable/', content)
         self.assertIn('vdp_client_table.js', content)
         self.assertIn('htmx.org', content)
@@ -73,7 +75,35 @@ class AccountsViewTests(TestCase):
         self.assertEqual(payload['recordsTotal'], 1)
         self.assertEqual(payload['recordsFiltered'], 1)
         self.assertEqual(len(payload['data']), 1)
-        self.assertIn('HTMX Test Account', payload['data'][0][1])
+        self.assertIn('HTMX Test Account', payload['data'][0][2])
+        self.assertIn('account-status-dot--active', payload['data'][0][0])
+
+    def test_datatable_aim_synced_column_shows_dash_for_local_account(self):
+        self.client.force_login(self.user)
+        response = self.client.get(
+            reverse('accounts-datatable'),
+            {'draw': 1, 'start': 0, 'length': 10},
+        )
+        aim_synced_cell = response.json()['data'][0][8]
+        self.assertIn('vdp-cell-muted', aim_synced_cell)
+        self.assertIn('—', aim_synced_cell)
+
+    def test_datatable_aim_synced_column_shows_sync_date_for_aim_fed_account(self):
+        synced_at = timezone.make_aware(
+            timezone.datetime(2026, 6, 10, 14, 0, 0),
+            timezone.get_default_timezone(),
+        )
+        self.account.aim_last_synced_at = synced_at
+        self.account.save(update_fields=['aim_last_synced_at'])
+
+        self.client.force_login(self.user)
+        response = self.client.get(
+            reverse('accounts-datatable'),
+            {'draw': 1, 'start': 0, 'length': 10},
+        )
+        aim_synced_cell = response.json()['data'][0][8]
+        self.assertIn('vdp-cell-date', aim_synced_cell)
+        self.assertIn('2026-06-10', aim_synced_cell)
 
     def test_datatable_json_new_filter_on_account_name_column(self):
         Account.objects.create(
@@ -89,14 +119,14 @@ class AccountsViewTests(TestCase):
                 'draw': 1,
                 'start': 0,
                 'length': 10,
-                'columns[1][search][value]': 'new',
+                'columns[2][search][value]': 'new',
             },
         )
 
         payload = response.json()
         self.assertEqual(payload['recordsFiltered'], 1)
-        self.assertIn('HTMX Test Account', payload['data'][0][1])
-        self.assertIn('badge-new', payload['data'][0][1])
+        self.assertIn('HTMX Test Account', payload['data'][0][2])
+        self.assertIn('badge-new', payload['data'][0][2])
 
     def test_datatable_json_account_filter(self):
         Account.objects.create(
@@ -111,13 +141,13 @@ class AccountsViewTests(TestCase):
                 'draw': 1,
                 'start': 0,
                 'length': 10,
-                'columns[3][search][value]': 'INACTIVE',
+                'columns[0][search][value]': 'INACTIVE',
             },
         )
 
         payload = response.json()
         self.assertEqual(payload['recordsFiltered'], 1)
-        self.assertIn('Inactive Account', payload['data'][0][1])
+        self.assertIn('Inactive Account', payload['data'][0][2])
 
     def test_datatable_json_setup_filter_not_configured(self):
         # Flat ?setup= param — mirrors dashboard Need Setup → accounts deep link.
@@ -125,6 +155,13 @@ class AccountsViewTests(TestCase):
             account_id=99005,
             account_name='Configured Dealer',
             account_status='ACTIVE',
+        )
+        Account.objects.create(
+            account_id=99007,
+            account_name='Direct Feed Dealer',
+            account_status='ACTIVE',
+            vdp_data_source='DIRECT_FEED',
+            direct_feed_file='dealer_99007.csv',
         )
         project = Project.objects.create(name='av-aim', color='brand', sort_order=0)
         _make_target_site(
@@ -141,16 +178,115 @@ class AccountsViewTests(TestCase):
                 'draw': 1,
                 'start': 0,
                 'length': 10,
-                'columns[3][search][value]': 'ACTIVE',
+                'columns[0][search][value]': 'ACTIVE',
                 'setup': 'not-configured',
             },
         )
 
         payload = response.json()
         self.assertEqual(payload['recordsFiltered'], 1)
-        self.assertIn('HTMX Test Account', payload['data'][0][1])
+        self.assertIn('HTMX Test Account', payload['data'][0][2])
         self.assertIn('Not set up', payload['data'][0][4])
         self.assertNotIn('Configured Dealer', str(payload['data']))
+        self.assertNotIn('Direct Feed Dealer', str(payload['data']))
+
+    def test_datatable_json_setup_filter_direct_feed(self):
+        Account.objects.create(
+            account_id=99008,
+            account_name='Direct Feed Dealer',
+            account_status='ACTIVE',
+            vdp_data_source='DIRECT_FEED',
+            direct_feed_file='dealer_99008.csv',
+            batch_feed_source='master_batch.csv',
+        )
+        self.client.force_login(self.user)
+        response = self.client.get(
+            reverse('accounts-datatable'),
+            {
+                'draw': 1,
+                'start': 0,
+                'length': 10,
+                'columns[0][search][value]': 'ACTIVE',
+                'setup': 'direct-feed',
+            },
+        )
+
+        payload = response.json()
+        self.assertEqual(payload['recordsFiltered'], 1)
+        self.assertIn('Direct Feed Dealer', payload['data'][0][2])
+        self.assertIn('vdp-direct-feed-yes', payload['data'][0][4])
+        self.assertIn('Direct feed', payload['data'][0][4])
+
+    def test_direct_feed_account_has_no_add_scrape_action(self):
+        Account.objects.create(
+            account_id=99009,
+            account_name='Direct Feed Only',
+            account_status='ACTIVE',
+            vdp_data_source='DIRECT_FEED',
+            direct_feed_file='only_direct.csv',
+        )
+        self.client.force_login(self.user)
+        response = self.client.get(
+            reverse('accounts-datatable'),
+            {
+                'draw': 1,
+                'start': 0,
+                'length': 10,
+                'columns[0][search][value]': 'ACTIVE',
+                'setup': 'direct-feed',
+            },
+        )
+
+        actions_cell = response.json()['data'][0][9]
+        self.assertNotIn('vdp-table-action--add', actions_cell)
+        self.assertNotIn('new-scrape', actions_cell)
+
+    def test_datatable_json_setup_filter_covered(self):
+        configured = Account.objects.create(
+            account_id=99010,
+            account_name='Scrape Configured',
+            account_status='ACTIVE',
+        )
+        project = Project.objects.create(name='av-aim-2', color='brand', sort_order=0)
+        _make_target_site(
+            project=project,
+            site_id='covered-scrape-dealer',
+            site_name=configured,
+            site_url='https://covered-scrape.example/',
+            web_provider='DealerOn',
+        )
+        Account.objects.create(
+            account_id=99011,
+            account_name='Direct Feed Covered',
+            account_status='ACTIVE',
+            vdp_data_source='DIRECT_FEED',
+            direct_feed_file='dealer_99011.csv',
+        )
+        self.client.force_login(self.user)
+        response = self.client.get(
+            reverse('accounts-datatable'),
+            {
+                'draw': 1,
+                'start': 0,
+                'length': 25,
+                'columns[0][search][value]': 'ACTIVE',
+                'setup': 'covered',
+            },
+        )
+
+        payload = response.json()
+        self.assertEqual(payload['recordsFiltered'], 2)
+        names = ''.join(str(row) for row in payload['data'])
+        self.assertIn('Scrape Configured', names)
+        self.assertIn('Direct Feed Covered', names)
+        self.assertNotIn('HTMX Test Account', names)
+
+    def test_accounts_deep_link_covered_preselects_filter(self):
+        self.client.force_login(self.user)
+        response = self.client.get(reverse('accounts'), {'setup': 'covered'})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'VDP covered')
 
     def test_datatable_json_setup_filter_configured(self):
         # Exists-based filter — only dealers with a linked TargetSite row.
@@ -174,14 +310,14 @@ class AccountsViewTests(TestCase):
                 'draw': 1,
                 'start': 0,
                 'length': 10,
-                'columns[3][search][value]': 'ACTIVE',
+                'columns[0][search][value]': 'ACTIVE',
                 'setup': 'configured',
             },
         )
 
         payload = response.json()
         self.assertEqual(payload['recordsFiltered'], 1)
-        self.assertIn('Configured Dealer', payload['data'][0][1])
+        self.assertIn('Configured Dealer', payload['data'][0][2])
         self.assertIn('vdp-scrape-yes', payload['data'][0][4])
 
     def test_accounts_deep_link_setup_query_preselects_filter(self):
@@ -193,6 +329,22 @@ class AccountsViewTests(TestCase):
         content = response.content.decode()
         self.assertIn('value="not-configured" selected', content)
         self.assertContains(response, 'Need setup')
+
+    def test_accounts_deep_link_direct_feed_preselects_filter(self):
+        self.client.force_login(self.user)
+        response = self.client.get(reverse('accounts'), {'setup': 'direct-feed'})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'value="direct-feed" selected')
+        self.assertContains(response, 'Direct feed')
+
+    def test_accounts_deep_link_configured_preselects_filter(self):
+        self.client.force_login(self.user)
+        response = self.client.get(reverse('accounts'), {'setup': 'configured'})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'value="configured" selected')
+        self.assertContains(response, 'Configured')
 
     def test_datatable_json_staff_sees_edit_account_link(self):
         self.user.is_staff = True

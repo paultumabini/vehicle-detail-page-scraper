@@ -1,0 +1,98 @@
+{% extends 'project/base.html' %}
+<!--
+  /spider-templates/ — spider_templates_view.
+
+  Dashboard “Templates in use” KPI links here (default ?view=registered).
+  “In use” = distinct spider on TargetSite.objects.runnable(); “registered” = SpiderLoader.
+-->
+
+{% block title %}VDP Scraper | Spider Templates{% endblock %}
+{% block page_heading %}Spider Templates{% endblock %}
+
+{% block content %}
+<div class="vdp-page-header">
+  <h4>Spider templates</h4>
+  <p>
+    {% if view == 'registered' %}
+    All Scrapy spiders registered in scrapebucket ({{ registered_count }} total).
+    {% else %}
+    Distinct templates assigned to runnable target sites ({{ in_use_count }} in use).
+    {% endif %}
+  </p>
+</div>
+
+<div class="vdp-card mb-4">
+  <div class="vdp-filter-bar">
+    <div>
+      <label for="template-view" class="vdp-filter-label">Show</label>
+      <select id="template-view" class="vdp-filter-select">
+        <option value="in-use"{% if view == 'in-use' %} selected{% endif %}>Templates in use</option>
+        <option value="registered"{% if view == 'registered' %} selected{% endif %}>All registered</option>
+      </select>
+    </div>
+  </div>
+</div>
+
+<div class="vdp-card p-0 overflow-hidden">
+  <table class="w-full vdp-data-table">
+    <thead>
+      <tr>
+        <th class="vdp-col-left">Spider template</th>
+        <th class="vdp-col-center">Runnable sites</th>
+        {% if view == 'registered' %}
+        <th class="vdp-col-center">Status</th>
+        {% endif %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in templates %}
+      <tr>
+        <td class="vdp-col-left">
+          <code class="vdp-code-inline">{{ row.name }}</code>
+        </td>
+        <td class="vdp-col-center vdp-stat-cell">
+          {% if row.site_count %}
+          <span class="vdp-stat-num">{{ row.site_count }}</span>
+          {% else %}
+          <span class="vdp-cell-muted">—</span>
+          {% endif %}
+        </td>
+        {% if view == 'registered' %}
+        <td class="vdp-col-center">
+          {% if row.in_use %}
+          <span class="vdp-flag vdp-flag--on">In use</span>
+          {% else %}
+          <span class="vdp-cell-muted">Registered only</span>
+          {% endif %}
+        </td>
+        {% endif %}
+      </tr>
+      {% empty %}
+      <tr>
+        <td colspan="{% if view == 'registered' %}3{% else %}2{% endif %}" class="vdp-empty-row">
+          {% if view == 'registered' %}
+          No registered spiders found in scrapebucket.
+          {% else %}
+          No spider templates are assigned to runnable target sites yet.
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    const select = document.getElementById('template-view');
+    if (!select) return;
+    select.addEventListener('change', function () {
+      const params = new URLSearchParams(window.location.search);
+      params.set('view', this.value);
+      window.location.search = params.toString();
+    });
+  });
+</script>
+{% endblock %}
