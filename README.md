@@ -1,59 +1,74 @@
-# VDP URL Scraper (Scrapes Bucket)
+# VDP Scraper
 
-Django application for managing dealer **vehicle detail page (VDP)** scraping: target sites, spider templates, crawl stats, and a dashboard for monitoring scrape volume over time. Scrapy spiders live under `scrapebucket/` and persist results through Django pipelines.
+Django app for managing dealer **vehicle detail page (VDP)** scraping: accounts synced from AIM, target sites, spider templates, crawl stats, and a dashboard for monitoring scrape volume. Scrapy spiders live under `scrapebucket/` and persist results through Django pipelines.
 
-![Dashboard: projects, sites, templates, YTD scrapes, and 15-day activity](docs/dashboard-screenshot.PNG)
+## Screenshots
 
-## Product screenshots
+| Dashboard | Accounts |
+| --- | --- |
+| ![Dashboard — KPIs and YTD volume by spider template](images/dashboard.PNG) | ![Accounts registry — AIM sync status and VDP data source](images/accounts.PNG) |
 
-### Admin: spider logs
+| Target sites | Target site detail |
+| --- | --- |
+| ![Target sites — scrape configs grouped by project](images/target_sites.PNG) | ![Target site detail — last run, export fields, crawl history](images/target_site_detail.PNG) |
 
-![Admin spider logs table view](docs/spider-logs.png)
+| Scrape items | Image capture |
+| --- | --- |
+| ![Scraped data — searchable inventory table with CSV export](images/scrape_items.PNG) | ![Image Capture — slideshow and URL list for scraped vehicle photos](images/image_capture.PNG) |
 
-### Project: scraped data table
+| Django admin |
+| --- |
+| ![Django admin — models and operator tools](images/admin.PNG) |
 
-![Scraped data table for a dealer site](docs/site-scrape-table.png)
+## What it does
 
-### Project: image preview modal
-
-![Vehicle image modal from a scrape row](docs/site-scrape-images-modal.png)
-
-### API examples (Postman and CLI)
-
-![API request/response example in Postman](docs/api-postman-example.png)
-![API response example using curl/httpie](docs/api-curl-httpie-example.png)
+1. **Sync accounts** from the AIM Admin API (`manage.py sync_accounts`) so dealer records, inventory stats, and feature flags stay current.
+2. **Configure target sites** — one scrape config per dealer URL, mapped to a spider template (WordPress theme, Dealer Inspire, eDealer, etc.).
+3. **Run crawls** via `runspider.py` — spiders extract VIN, price, URL, images, and other fields into the `Scrape` model.
+4. **Monitor and export** — dashboard KPIs, per-site last-run status, FTP CSV export, and a REST API for downstream systems.
 
 ## Features
 
-- **Web dashboard** — KPIs (projects, sites, templates, scraped item counts), YTD template breakdown, recent scrape activity, and scraper elapsed-time trends.
-- **30+ dealer spiders** — WordPress themes (Avada, Astra, Motors), Dealer Inspire, eDealer, Flex Dealer, SM360, Reynolds, Convertus/Trader, JSON APIs, and Selenium/Playwright for JS-heavy sites.
-- **REST API** — Supporting integrations under `project/api/`.
-- **Ops hooks** — Optional FTP export of VDP CSVs (`VdpUrlFtpExportPipeline`), per-crawl stats logged to `SpiderLog`, and cron-friendly `runspider.py` entrypoint.
+- **Web dashboard** — KPIs, account setup coverage, target-site status, and YTD volume by spider template.
+- **30+ dealer spiders** — WordPress themes, Dealer Inspire, eDealer, Reynolds, Convertus/Trader, JSON APIs, and Selenium/Playwright for JS-heavy sites.
+- **Account registry** — AIM sync, direct-feed vs scrape-required flags, and inactive-account handling.
+- **REST API** — Integrations under `project/api/` (in-app reference at `/api-docs/`).
+- **Ops hooks** — FTP export of VDP CSVs, per-crawl `SpiderLog` stats, status-event audit trail, and cron-friendly `runspider.py`.
+
+## Ideal workflow
+
+| Step | Who | Action |
+| --- | --- | --- |
+| 1 | Ops / cron | `sync_accounts` pulls latest dealer list from AIM. |
+| 2 | Operator | Review new accounts flagged `is_new_account`; set **VDP data source** to _Requires scrape setup_ or _Direct feed_. |
+| 3 | Operator | Create a **target site** — pick account, listing URL, spider template, and export fields. |
+| 4 | Dev / ops | Add or tune a spider under `scrapebucket/spiders/` if the dealer platform is new. |
+| 5 | Cron | `runspider.py -s <template>` crawls all active targets for that template. |
+| 6 | Operator | Check **Last Run** on the target site detail page; open a ticket if exports stop updating after a site redesign. |
+
+In-app help and FAQ: `/help/` after starting the dev server.
 
 ## Stack
 
-- Python 3.9+ (3.13 supported)
-- Django, Scrapy, Django REST Framework
-- PostgreSQL or SQLite (see `webscraping/settings.py`)
-- Optional: Selenium / Playwright / undetected-chromedriver for specific spiders
+Python 3.9+ · Django · Scrapy · Django REST Framework · PostgreSQL (SQLite works locally)
+
+Optional browser automation: Selenium, Playwright (`scrapy-playwright`)
 
 ## Repository layout
 
 ```
-├── docs/                        # Documentation assets (screenshots, etc.)
+├── images/                      # README screenshots
 ├── fixtures/                    # Sample / initial data
 ├── logs/                        # Spider log output (create as needed)
 ├── project/                     # Main Django app (models, views, admin, API, templates)
 ├── scrapebucket/                # Scrapy project root
 │   ├── runspider.py             # Twisted/Scrapy runner — sequential crawls from DB targets
 │   └── scrapebucket/            # Scrapy package
-│       ├── django_setup.py      # Idempotent Django bootstrap (called once from settings.py)
+│       ├── django_setup.py      # Idempotent Django bootstrap
 │       ├── settings.py          # Scrapy settings + Django bootstrap
 │       ├── pipelines.py         # Persists items → Scrape model
-│       ├── middlewares.py       # Downloader/spider middlewares, Selenium drivers, stat logging
-│       ├── items.py             # Item definitions
+│       ├── middlewares.py       # Downloader/spider middlewares, Selenium drivers
 │       ├── urls_crawl.py        # Maps TargetSite records to spider classes
-│       ├── utils.py             # O'Regans CDN URL builders, cookie helpers
 │       └── spiders/             # One module per dealer platform (~30 spiders)
 ├── static/                      # CSS, JS
 ├── users/                       # Auth and user-facing views
@@ -64,92 +79,56 @@ Django application for managing dealer **vehicle detail page (VDP)** scraping: t
 
 ## Quick start (local)
 
-### 1. Clone and virtualenv
-
 ```bash
-git clone https://github.com/paultumabini/vdp-urls-scraper.git
-cd vdp-urls-scraper
+git clone https://github.com/paultumabini/vehicle-detail-page-scraper.git
+cd vehicle-detail-page-scraper
 python3 -m venv venv
-source venv/bin/activate   # Windows: venv\Scripts\activate
+source venv/bin/activate
 pip install -r requirements.txt
-```
 
-### 2. Environment variables
-
-For day-to-day **development** you can rely on defaults in `webscraping/settings.py` (`DEBUG` defaults to `True` when `DJANGO_DEBUG` is unset). For **production**, set at least:
-
-| Variable | Purpose |
-|----------|---------|
-| `DJANGO_DEBUG` | Set to `0` or `false` in production |
-| `DJANGO_SECRET_KEY` | Required when `DEBUG` is false (never use the repo fallback key) |
-| `DJANGO_ALLOWED_HOSTS` | Comma-separated hostnames |
-| `POSTGRES_*` / `DB_*` | See `webscraping/settings.py` for database config |
-| `AIM_FTP_HOST`, `AIM_FTP_USER`, `AIM_FTP_PASS` | FTP export of VDP CSVs (optional locally) |
-| `AIM_FTP_PORT` | FTP port (default `21`) |
-| `AVAIM_*` / `GS_*` | External API integrations where used |
-
-Example (optional shell file, e.g. `~/.envars`):
-
-```bash
-export DJANGO_SECRET_KEY="your-secret-key"
-export DJANGO_DEBUG=1
-# export DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1
-# export AIM_FTP_HOST=...
-# export AIM_FTP_USER=...
-# export AIM_FTP_PASS=...
-```
-
-### 3. Database and superuser
-
-```bash
 venv/bin/python manage.py migrate
 venv/bin/python manage.py createsuperuser
 venv/bin/python manage.py runserver
 ```
 
-Open the app (default: `http://127.0.0.1:8000/`) and `/admin/` as needed.
+Open [http://127.0.0.1:8000/](http://127.0.0.1:8000/) for the dashboard. Admin: `/admin/`.
+
+### Environment variables
+
+Documented in `webscraping/settings.py`. Defaults work for local dev with `DEBUG=True`.
+
+| Variable | Purpose |
+| --- | --- |
+| `DJANGO_SECRET_KEY` | Required when `DEBUG=False` |
+| `POSTGRES_*` / `DB_*` | Database connection |
+| `AVAIM_EMAIL`, `AVAIM_PASS` | AIM Admin API — needed for `sync_accounts` |
+| `AIM_FTP_*` | FTP export of VDP CSV files |
+
+### Sync accounts (optional locally)
+
+```bash
+export AVAIM_EMAIL=you@example.com AVAIM_PASS=secret
+venv/bin/python manage.py sync_accounts
+venv/bin/python manage.py sync_accounts --dry-run
+```
 
 ## Running spiders
 
-`runspider.py` lives inside the `scrapebucket/` directory. Run it from the **repository root**:
+From the repository root:
 
 ```bash
-# Run one spider against all active targets that use it
-venv/bin/python scrapebucket/runspider.py -s <spider_name>
-
-# Examples
-venv/bin/python scrapebucket/runspider.py -s webstager
-venv/bin/python scrapebucket/runspider.py -s all   # wipes all Scrape rows first, then runs every active target
+venv/bin/python scrapebucket/runspider.py -s <spider_name>   # one template, all active targets
+venv/bin/python scrapebucket/runspider.py -s all             # every active target
 ```
 
-Ad-hoc Scrapy invocation (single URL), from the **`scrapebucket/` directory**:
+Spider names match template slugs (e.g. `edealer`, `convertus`, `wp_astra`).
+
+## Tests
 
 ```bash
-cd scrapebucket
-SCRAPY_SETTINGS_MODULE=scrapebucket.settings \
-  scrapy crawl <spider_name> -a url=https://www.example.com/
+venv/bin/python manage.py test project
 ```
-
-Logs are typically written under `logs/` if you configure cron or wrappers to do so.
-
-## Django / Scrapy bootstrap
-
-`scrapebucket/scrapebucket/django_setup.py` exposes a single `ensure_django()` helper that:
-
-1. Walks parent directories to locate `manage.py` (the Django project root).
-2. Prepends that directory to `sys.path`.
-3. Sets `DJANGO_SETTINGS_MODULE` and `DJANGO_ALLOW_ASYNC_UNSAFE` (required for synchronous ORM access inside Twisted's async loop).
-4. Calls `django.setup()`.
-
-The function is **idempotent** — a module-level `_CONFIGURED` flag means subsequent calls are no-ops. `settings.py` calls it once at load time (the earliest point in Scrapy's lifecycle); all other call sites (`middlewares.py`, `pipelines.py`, `runspider.py`) are safety nets for isolated imports.
-
-## Production notes
-
-- Run Django behind **Gunicorn** (or uwsgi) and **Nginx** (or similar).
-- Use **systemd** or **cron** for scheduled `runspider.py` jobs; source the same env file as the web app.
-- Set **`DJANGO_DEBUG=0`**, a strong **`DJANGO_SECRET_KEY`**, and proper **`DJANGO_ALLOWED_HOSTS`** (avoid `*` in production).
-- See `webscraping/settings.py` for CORS, `REST_FRAMEWORK`, and storage options.
 
 ## License / contact
 
-Project by **paultumabini** — [github.com/paultumabini/vdp-urls-scraper](https://github.com/paultumabini/vdp-urls-scraper).
+Project by **paultumabini** — [github.com/paultumabini/vehicle-detail-page-scraper](https://github.com/paultumabini/vehicle-detail-page-scraper).

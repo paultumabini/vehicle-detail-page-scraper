@@ -289,38 +289,40 @@
     <div class="vdp-card vdp-site-detail__card vdp-site-detail__card--wide">
       <h5 class="vdp-scrape-form__section-title">Status history</h5>
       {% if status_events %}
-      <table class="w-full vdp-data-table vdp-status-history-table">
-        <thead>
-          <tr>
-            <th scope="col">When</th>
-            <th scope="col">Change</th>
-            <th scope="col">Source</th>
-            <th scope="col">Detail</th>
-            <th scope="col">By</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for event in status_events %}
-          <tr>
-            <td class="vdp-nowrap">
-              {{ event.created_at|timezone:'US/Eastern'|date:'Y-m-d H:i' }}
-            </td>
-            <td class="vdp-nowrap">
-              {{ event.from_status|default:"—" }} → {{ event.to_status }}
-            </td>
-            <td>{{ event.source|status_event_source_label }}</td>
-            <td>{{ event.detail|default:"—" }}</td>
-            <td>
-              {% if event.actor %}
-              {{ event.actor.username }}
-              {% else %}
-              <span class="vdp-cell-muted">System</span>
-              {% endif %}
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+      <div class="vdp-table-scroll">
+        <table class="w-full vdp-data-table vdp-status-history-table">
+          <thead>
+            <tr>
+              <th scope="col" class="vdp-col-left">When</th>
+              <th scope="col" class="vdp-col-left">Change</th>
+              <th scope="col" class="vdp-col-left">Source</th>
+              <th scope="col" class="vdp-col-left">Detail</th>
+              <th scope="col" class="vdp-col-left">By</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for event in status_events %}
+            <tr>
+              <td class="vdp-col-left vdp-nowrap">
+                {{ event.created_at|timezone:'US/Eastern'|date:'Y-m-d H:i' }}
+              </td>
+              <td class="vdp-col-left vdp-nowrap">
+                {{ event.from_status|default:"—" }} → {{ event.to_status }}
+              </td>
+              <td class="vdp-col-left">{{ event.source|status_event_source_label }}</td>
+              <td class="vdp-col-left">{{ event.detail|default:"—" }}</td>
+              <td class="vdp-col-left">
+                {% if event.actor %}
+                {{ event.actor.username }}
+                {% else %}
+                <span class="vdp-cell-muted">System</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
       {% else %}
       <p class="vdp-site-detail__empty">No status changes recorded yet.</p>
       {% endif %}

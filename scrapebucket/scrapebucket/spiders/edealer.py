@@ -103,9 +103,22 @@ class EdealerSpider(scrapy.Spider):
                 continue
             seen_ids.add(item_id)
 
+            category = (
+                card.attrib.get('data-state-of-vehicle')
+                or card.attrib.get('data-conditionName')
+                or self._listing_category(response)
+            )
+
             loader = ItemLoader(ScrapebucketItem())
-            loader.add_value('vehicle_url', response.urljoin(f'/inventory/{slug}/'))
+            loader.add_value('category', category)
+            loader.add_value('year', card.attrib.get('data-year'))
+            loader.add_value('make', card.attrib.get('data-make'))
+            loader.add_value('model', card.attrib.get('data-model'))
+            loader.add_value('trim', card.attrib.get('data-trim'))
+            loader.add_value('stock_number', card.attrib.get('data-stocknumber'))
             loader.add_value('vin', vin)
+            loader.add_value('vehicle_url', response.urljoin(f'/inventory/{slug}/'))
+            loader.add_value('price', card.attrib.get('data-price'))
             loader.add_value('domain', self.domain_name)
             yield loader.load_item()
 
@@ -144,11 +157,25 @@ class EdealerSpider(scrapy.Spider):
             vin = vin1 if vin1 else vin2
             vdp_url = vdp_url1 if vdp_url1 else vdp_url2
 
-            loader = ItemLoader(ScrapebucketItem())
+            loader = ItemLoader(ScrapebucketItem(), selector=html)
             if vdp_url and len(vdp_url) > 1:
                 loader.add_value('vehicle_url', f'{self.url}{vdp_url[1:]}')
             elif vdp_url:
                 loader.add_value('vehicle_url', f'{self.url}{vdp_url}')
+            loader.add_value('category', self._listing_category(response))
+            loader.add_xpath('year', '//span[contains(@class,"vehicle-year")]/text()')
+            loader.add_xpath('make', '//span[contains(@class,"vehicle-make")]/text()')
+            loader.add_xpath('model', '//span[contains(@class,"vehicle-model")]/text()')
+            loader.add_xpath('trim', '//span[contains(@class,"vehicle-trim")]/text()')
+            loader.add_xpath(
+                'stock_number',
+                '//*[contains(@class,"vehicle-stock")]/text()',
+            )
+            loader.add_xpath(
+                'price',
+                '//*[contains(@class,"vehicle-price")]/text()'
+                ' | //*[contains(@class,"internet-price")]/text()',
+            )
             loader.add_value('vin', vin)
             loader.add_value('domain', self.domain_name)
 
@@ -183,3 +210,12 @@ class EdealerSpider(scrapy.Spider):
                 callback=self.parse,
                 meta={'legacy_ajax': True},
             )
+
+    @staticmethod
+    def _listing_category(response):
+        url = response.url.lower()
+        if '/used' in url or 'inventory/used' in url:
+            return 'used'
+        if '/new' in url or 'inventory/new' in url:
+            return 'new'
+        return ''

@@ -169,3 +169,8 @@ fixtures/*
 /local/backups/
 .vscode/
 .prettierignore
+
+# Company ops (mobials-owned; not published to personal repo)
+/devops/
+/crontab.prod
+/crontab.staging

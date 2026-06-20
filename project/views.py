@@ -7,14 +7,18 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.db.models import (
+    Case,
     Count,
     Exists,
+    F,
     IntegerField,
     Max,
     OuterRef,
     Q,
     Subquery,
     Sum,
+    Value,
+    When,
 )
 from django.db.models.functions import Cast
 from django.views.decorators.http import require_POST
@@ -649,12 +653,50 @@ def _accounts_queryset():
     primary_site = TargetSite.objects.filter(
         site_name_id=OuterRef('account_id'),
     ).order_by('-date_created')
+    linked_site = Exists(TargetSite.objects.filter(site_name_id=OuterRef('account_id')))
 
     return Account.objects.annotate(
         total_sites=Count('targetsite', distinct=True),
         primary_site_id=Subquery(primary_site.values('site_id')[:1]),
         primary_site_project=Subquery(primary_site.values('project__name')[:1]),
+        # Sort key for VDP setup column: not-configured < configured < direct-feed.
+        vdp_setup_sort=Case(
+            When(vdp_data_source='DIRECT_FEED', then=Value(2)),
+            When(linked_site, then=Value(1)),
+            default=Value(0),
+            output_field=IntegerField(),
+        ),
     )
+
+
+def _accounts_order_by(order_col, order_dir):
+    """
+    Order expressions for accounts_datatable_json.
+
+    Nullable stats/flags/dates use nulls_last so numeric and date sorts match
+    displayed values (— rows stay at the bottom in both directions).
+    """
+    order_fields = {
+        0: 'account_status',
+        1: 'account_id',
+        2: 'account_name',
+        3: 'city',
+        4: 'vdp_setup_sort',
+        5: 'new_active_stats',
+        6: 'used_active_stats',
+        7: 'facebook_feed',
+        8: 'aim_last_synced_at',
+    }
+    field = order_fields.get(order_col, 'account_name')
+    desc = order_dir == 'desc'
+    nullable_cols = {5, 6, 7, 8}
+    if order_col in nullable_cols:
+        expr = F(field)
+        primary = expr.desc(nulls_last=True) if desc else expr.asc(nulls_last=True)
+        return [primary, 'account_id']
+    if desc:
+        return [f'-{field}', 'account_id']
+    return [field, 'account_id']
 
 
 def _apply_accounts_setup_filter(qs, setup_filter):
@@ -775,21 +817,7 @@ def accounts_datatable_json(request):
 
     order_col = int(request.GET.get('order[0][column]', 2))
     order_dir = request.GET.get('order[0][dir]', 'asc')
-    order_fields = {
-        0: 'account_status',
-        1: 'account_id',
-        2: 'account_name',
-        3: 'city',
-        4: 'total_sites',
-        5: 'new_active_stats',
-        6: 'used_active_stats',
-        7: 'facebook_feed',
-        8: 'aim_last_synced_at',
-    }
-    order_field = order_fields.get(order_col, 'account_name')
-    if order_dir == 'desc':
-        order_field = f'-{order_field}'
-    qs = qs.order_by(order_field, 'account_id')
+    qs = qs.order_by(*_accounts_order_by(order_col, order_dir))
 
     page = qs[start : start + length]
     data = [_account_row_cells(account, request) for account in page]

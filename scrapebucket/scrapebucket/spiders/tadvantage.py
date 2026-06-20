@@ -74,8 +74,14 @@ class TadvantageSpider(scrapy.Spider):
             new_vdp_url = self.url + vdp_url[indexed:]
 
             loader.add_value('category', result.get('sale_class'))
+            loader.add_value('year', result.get('year'))
+            loader.add_value('make', result.get('make'))
+            loader.add_value('model', result.get('model'))
+            loader.add_value('trim', result.get('trim'))
+            loader.add_value('stock_number', result.get('stock_number'))
             loader.add_value('vin', result.get('vin'))
             loader.add_value('vehicle_url', new_vdp_url.replace(' ', '%20'))
+            loader.add_value('price', result.get('asking_price'))
             loader.add_value('domain', self.domain_name)
             yield loader.load_item()
 

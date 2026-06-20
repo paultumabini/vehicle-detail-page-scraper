@@ -10,7 +10,7 @@ class Migration(migrations.Migration):
     """
 
     dependencies = [
-        ('project', '0017_rename_omni_auto_spider'),
+        ('project', '0016_backfill_target_site_status_events'),
     ]
 
     operations = [

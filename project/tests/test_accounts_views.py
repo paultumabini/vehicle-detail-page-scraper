@@ -2,6 +2,8 @@
 Tests for Accounts list view and htmx clear-new row action (Guides 03–04).
 """
 
+import re
+
 from django.contrib.auth.models import User
 from django.test import Client, TestCase
 from django.urls import reverse
@@ -400,6 +402,76 @@ class AccountsViewTests(TestCase):
         self.assertIn('vdp-table-action--view', actions_cell)
         self.assertIn('/project/av-aim/taylorcadillac/', actions_cell)
         self.assertNotIn('vdp-table-action--add', actions_cell)
+
+    def test_datatable_json_sort_vdp_setup_not_configured_before_direct_feed(self):
+        """VDP setup sort uses status rank, not raw site count (both can be 0)."""
+        Account.objects.create(
+            account_id=99020,
+            account_name='Direct Feed First',
+            account_status='ACTIVE',
+            vdp_data_source='DIRECT_FEED',
+            direct_feed_file='direct.csv',
+        )
+        Account.objects.create(
+            account_id=99021,
+            account_name='Not Configured First',
+            account_status='ACTIVE',
+            vdp_data_source='SCRAPE',
+        )
+        self.client.force_login(self.user)
+        response = self.client.get(
+            reverse('accounts-datatable'),
+            {
+                'draw': 1,
+                'start': 0,
+                'length': 25,
+                'columns[0][search][value]': 'ACTIVE',
+                'order[0][column]': 4,
+                'order[0][dir]': 'asc',
+            },
+        )
+
+        names = [
+            re.search(r'vdp-cell-name">([^<]+)<', row[2]).group(1)
+            for row in response.json()['data']
+        ]
+        self.assertLess(
+            names.index('Not Configured First'),
+            names.index('Direct Feed First'),
+        )
+
+    def test_datatable_json_sort_new_active_stats_numeric(self):
+        Account.objects.create(
+            account_id=99022,
+            account_name='Low Stats',
+            account_status='ACTIVE',
+            new_active_stats=5,
+        )
+        Account.objects.create(
+            account_id=99023,
+            account_name='High Stats',
+            account_status='ACTIVE',
+            new_active_stats=120,
+        )
+        self.client.force_login(self.user)
+        response = self.client.get(
+            reverse('accounts-datatable'),
+            {
+                'draw': 1,
+                'start': 0,
+                'length': 25,
+                'columns[0][search][value]': 'ACTIVE',
+                'order[0][column]': 5,
+                'order[0][dir]': 'desc',
+            },
+        )
+
+        names = [
+            re.search(r'vdp-cell-name">([^<]+)<', row[2]).group(1)
+            for row in response.json()['data']
+        ]
+        self.assertEqual(names[0], 'High Stats')
+        self.assertLess(names.index('High Stats'), names.index('Low Stats'))
 
 
 class AccountClearNewTests(TestCase):

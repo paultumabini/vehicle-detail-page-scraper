@@ -8,6 +8,7 @@ from urllib.parse import urljoin, urlparse
 
 import scrapy
 from scrapy.loader import ItemLoader
+from scrapy.selector import Selector
 
 from ..items import ScrapebucketItem
 from ..spider_helpers.response_json import loads_response_body
@@ -15,10 +16,6 @@ from ..spider_helpers.response_json import loads_response_body
 _FILTER_SUFFIX = '-10x0-0-0'
 _FILTER_VARIANTS = ('a1b13q', 'a1b123d19q')
 _FILTER_ID = re.compile(r'id="filterid"\s+value="([^"]+)"', re.I)
-_CAR_ROW = re.compile(
-    r'data-vin="([^"]+)"[^>]*>.*?<a href="([^"]+)"',
-    re.I | re.S,
-)
 
 
 class D2cmediaSpider(scrapy.Spider):
@@ -31,8 +28,8 @@ class D2cmediaSpider(scrapy.Spider):
     ``#filterid`` input).  Pagination stops when the API returns ``count=0``;
     ``fltPageId[1]`` in the filter blob is a UI cap (36), not inventory size.
 
-    VIN and VDP URL are parsed from the API ``html`` fragment (``data-vin`` and
-    ``carImage`` links); VDP pages are not crawled.
+    VIN, VDP URL, and listing metadata are parsed from the API ``html`` fragment
+    (``carBoxInner`` / ``carImage`` cards); VDP pages are not crawled.
     """
 
     name = 'd2cmedia'
@@ -134,12 +131,30 @@ class D2cmediaSpider(scrapy.Spider):
         count = payload.get('count') or 0
         base_url = response.meta['base_url']
 
-        for vin, path in _CAR_ROW.findall(html):
-            if not vin:
+        for row in Selector(text=html).css('div.carBoxInner'):
+            card = row.css('div.carImage[data-vin]')
+            if not card:
                 continue
+
+            vin = card.attrib.get('data-vin')
+            path = row.css('div.carImage a::attr(href)').get()
+            if not vin or not path:
+                continue
+
             loader = ItemLoader(item=ScrapebucketItem())
+            loader.add_value(
+                'category', 'used' if '/used/' in path.lower() else 'new'
+            )
+            loader.add_value('year', card.attrib.get('data-year'))
+            loader.add_value('make', card.attrib.get('data-make'))
+            loader.add_value('model', card.attrib.get('data-model'))
+            loader.add_value('trim', (row.css('span.divTrim::text').get() or '').strip())
+            loader.add_value('stock_number', card.attrib.get('data-nostock'))
             loader.add_value('vin', vin)
             loader.add_value('vehicle_url', urljoin(base_url, path.lstrip('/')))
+            loader.add_value(
+                'price', row.css('span.dollarsigned.p-base::text').get()
+            )
             loader.add_value('domain', self.domain_name)
             yield loader.load_item()
 

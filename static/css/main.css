@@ -546,6 +546,7 @@ table.vdp-data-table thead th {
   padding: 0.65rem 0.85rem;
   border-bottom: 1px solid var(--vdp-border);
   white-space: nowrap;
+  text-align: left;
 }
 
 table.vdp-data-table tbody td {
@@ -3014,6 +3015,33 @@ a.vdp-auth-submit--link:hover {
 
 .vdp-status-history-table {
   margin-top: 0.25rem;
+  table-layout: fixed;
+  width: 100%;
+}
+
+.vdp-status-history-table thead th,
+.vdp-status-history-table tbody td {
+  text-align: left;
+}
+
+.vdp-status-history-table thead th:nth-child(1),
+.vdp-status-history-table tbody td:nth-child(1) {
+  width: 9.5rem;
+}
+
+.vdp-status-history-table thead th:nth-child(2),
+.vdp-status-history-table tbody td:nth-child(2) {
+  width: 10.5rem;
+}
+
+.vdp-status-history-table thead th:nth-child(3),
+.vdp-status-history-table tbody td:nth-child(3) {
+  width: 7.5rem;
+}
+
+.vdp-status-history-table thead th:nth-child(5),
+.vdp-status-history-table tbody td:nth-child(5) {
+  width: 6.5rem;
 }
 
 .vdp-recent-deactivations__summary {

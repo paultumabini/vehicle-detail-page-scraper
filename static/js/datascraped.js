@@ -72,9 +72,16 @@ function showUnitModal() {
   document.body.classList.add('unit-modal-open');
 
   const dialog = modal.querySelector('.modal-dialog');
-  if (dialog && !dialog.dataset.dragInit) {
-    initModalDrag(dialog);
-    dialog.dataset.dragInit = '1';
+  if (dialog) {
+    // Clear drag offsets from a prior session so responsive sizing stays correct.
+    dialog.style.position = '';
+    dialog.style.margin = '';
+    dialog.style.left = '';
+    dialog.style.top = '';
+    if (!dialog.dataset.dragInit) {
+      initModalDrag(dialog);
+      dialog.dataset.dragInit = '1';
+    }
   }
 }
 
@@ -693,13 +700,20 @@ function openVehicleDetailModal(data, stockNumber) {
     );
 
     const imagesHost = mBody.querySelector('.vdp-unit-modal__images');
-    mBody.querySelector('.view-images')?.addEventListener('click', () => {
+    const showCarousel = () => {
       imagesHost.innerHTML = '';
       mountImageCarousel(imagesHost, urls);
-    });
+      requestAnimationFrame(() => {
+        imagesHost.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      });
+    };
+    mBody.querySelector('.view-images')?.addEventListener('click', showCarousel);
     mBody.querySelector('.view-list')?.addEventListener('click', () => {
       imagesHost.innerHTML = '';
       mountImageUrlList(imagesHost, urls);
+      requestAnimationFrame(() => {
+        imagesHost.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      });
     });
   }
 }
