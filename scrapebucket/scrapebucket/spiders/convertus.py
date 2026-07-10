@@ -4,15 +4,17 @@ from urllib.parse import urlparse
 import scrapy
 from scrapy.loader import ItemLoader
 
+from .base_spider import ScrapebucketSpider
 from ..items import ScrapebucketItem
 from ..spider_helpers.response_json import loads_response_body
 from ..spider_helpers.url_qs import access_trader_direct_API, get_company_id
 
 
-class ConvertusSpider(scrapy.Spider):
+class ConvertusSpider(ScrapebucketSpider):
     name = 'convertus'
     domain_name = ''
     page = 1
+    company_id: str | None = None
 
     custom_settings = {
         'DOWNLOADER_MIDDLEWARES': {
@@ -25,14 +27,13 @@ class ConvertusSpider(scrapy.Spider):
         self.domain_name = '.'.join(urlparse(self.url).netloc.split('.')[-2:])
         dn = self.domain_name.split('.')[0]
 
-        # get company_id
-        self.company_id = get_company_id(dn)
-        # if feed_id not found
-        if not self.company_id:
+        company_id = get_company_id(dn)
+        if not company_id:
             return
+        self.company_id = company_id
 
         yield scrapy.Request(
-            url=f'{access_trader_direct_API( self.company_id, self.page, 15)}',
+            url=f'{access_trader_direct_API(company_id, self.page, 15)}',
             callback=self.parse,
         )
 
@@ -82,7 +83,10 @@ class ConvertusSpider(scrapy.Spider):
 
         if self.page <= page_limit:
             self.page += 1
+            company_id = self.company_id
+            if not company_id:
+                return
             yield scrapy.Request(
-                url=f'{access_trader_direct_API( self.company_id, self.page, 15)}',
+                url=f'{access_trader_direct_API(company_id, self.page, 15)}',
                 callback=self.parse,
             )

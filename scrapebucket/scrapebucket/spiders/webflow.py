@@ -6,14 +6,15 @@ from urllib.parse import urlparse
 import scrapy
 from scrapy.linkextractors import LinkExtractor
 from scrapy.loader import ItemLoader
-from scrapy.spiders import CrawlSpider, Rule
+from scrapy.spiders import Rule
+from .base_spider import ScrapebucketCrawlSpider
 
 from ..items import ScrapebucketItem
 
 _LISTING_PATH = re.compile(r'/(?:en|fr)-listing/(?:vin-)?[A-HJ-NPR-Z0-9]{17}$', re.I)
 
 
-class WebflowSpider(CrawlSpider):
+class WebflowSpider(ScrapebucketCrawlSpider):
     """
     Genesis-style Webflow CPO sites expose VINs in listing URLs and on the VDP.
 

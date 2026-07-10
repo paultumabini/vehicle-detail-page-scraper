@@ -11,12 +11,13 @@ from scrapy.selector import Selector
 from scrapy.utils.project import get_project_settings
 from scrapy_playwright.page import PageMethod
 
+from .base_spider import ScrapebucketSpider
 from ..items import ScrapebucketItem
 
 logger = logging.getLogger(__name__)
 
 
-class TadvantageScrollSpider(scrapy.Spider):
+class TadvantageScrollSpider(ScrapebucketSpider):
     name = 'tadvantage_scroll'
     domain_name = ''
 

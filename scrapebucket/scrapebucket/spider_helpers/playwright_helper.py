@@ -8,7 +8,9 @@ import re
 from functools import reduce
 
 from playwright.sync_api import sync_playwright
-from playwright_stealth import stealth_sync
+from playwright_stealth import Stealth
+
+_stealth = Stealth()
 
 
 class PlaywrightHelper:
@@ -44,11 +46,24 @@ class PlaywrightHelper:
         browser.close()
         return max(digits) if digits else 1
 
+    def get_pagination_remove_text_legacy(self, page, browser) -> int:
+        """Avada theme: parse the first pagination link, drop its leading digit char."""
+        page.wait_for_selector(self.wait_until_selector)
+        elements = page.query_selector_all(self.selector)
+        browser.close()
+        if not elements:
+            return 1
+        digits = re.sub(r'[^0-9]', '', elements[0].inner_text() or '')
+        if not digits:
+            return 1
+        tail = digits[1:] if len(digits) > 1 else digits
+        return int(tail)
+
     def get_page_num_src(self, method: str) -> int:
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(headless=True)
             page = browser.new_page()
-            stealth_sync(page)
+            _stealth.apply_stealth_sync(page)
             page.goto(self.url, timeout=60_000)
             try:
                 fn = getattr(self, method)
@@ -76,7 +91,7 @@ class PlaywrightPageSourceHelper:
             browser = playwright.chromium.launch(headless=True)
             page = browser.new_page()
             try:
-                stealth_sync(page)
+                _stealth.apply_stealth_sync(page)
                 page.goto(self.url, timeout=60_000)
                 page.wait_for_selector(self.wait_until_selector)
                 return page.content()

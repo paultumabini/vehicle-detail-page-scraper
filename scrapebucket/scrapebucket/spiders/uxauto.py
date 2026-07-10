@@ -6,6 +6,7 @@ from urllib.parse import urlencode, urljoin, urlparse
 import scrapy
 from scrapy.loader import ItemLoader
 
+from .base_spider import ScrapebucketSpider
 from ..items import ScrapebucketItem
 from ..spider_helpers.response_json import loads_response_body
 
@@ -21,7 +22,7 @@ _CONDITIONS = (
 )
 
 
-class UxautoSpider(scrapy.Spider):
+class UxautoSpider(ScrapebucketSpider):
     """
     UX Auto dealers are Angular SPAs. ``main.*.js`` embeds ``dealer_id`` and the
     inventory list is loaded from a shared AWS endpoint:

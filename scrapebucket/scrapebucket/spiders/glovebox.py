@@ -4,11 +4,12 @@ import scrapy
 from scrapy.linkextractors import LinkExtractor
 from scrapy.loader import ItemLoader
 
+from .base_spider import ScrapebucketSpider
 from ..items import ScrapebucketItem
 from ..spider_helpers.response_json import loads_response_body
 
 
-class GloveboxSpider(scrapy.Spider):
+class GloveboxSpider(ScrapebucketSpider):
     name = 'glovebox'
     domain_name = ''
 

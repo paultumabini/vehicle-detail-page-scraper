@@ -1,12 +1,10 @@
 """
-Scrapy downloader/spider middlewares and Selenium/Chrome driver integration.
+Scrapy downloader/spider middlewares.
 
 Classes
 -------
 ScrapebucketSpiderMiddleware     — thin pass-through spider middleware (boilerplate)
 ScrapebucketDownloaderMiddleware — thin pass-through downloader middleware (boilerplate)
-SeleniumStealthMiddleware        — scrapy-selenium with selenium-stealth applied
-UndetectedChromeDriver           — scrapy-selenium wrapper using undetected-chromedriver
 JobStatLogsMiddleware            — persists crawl stats to ``SpiderLog`` on spider close
 
 Django ORM is bootstrapped via ``ensure_django()`` (idempotent; a no-op when
@@ -16,14 +14,10 @@ Django ORM is bootstrapped via ``ensure_django()`` (idempotent; a no-op when
 from __future__ import annotations
 
 import logging
-from importlib import import_module
 
 import pytz
-import undetected_chromedriver as uc
 from django.db import close_old_connections
 from scrapy import signals
-from scrapy_selenium.middlewares import SeleniumMiddleware
-from selenium_stealth import stealth
 
 from scrapebucket.django_setup import ensure_django
 
@@ -39,6 +33,7 @@ from project.models import SpiderLog, TargetSite  # noqa: E402 — must follow e
 # ---------------------------------------------------------------------------
 # Boilerplate middlewares (no custom logic; extend these as needed)
 # ---------------------------------------------------------------------------
+
 
 class ScrapebucketSpiderMiddleware:
     """
@@ -99,96 +94,34 @@ class ScrapebucketDownloaderMiddleware:
         spider.logger.info('Spider opened: %s' % spider.name)
 
 
-# ---------------------------------------------------------------------------
-# Chrome / Selenium driver middlewares
-# ---------------------------------------------------------------------------
-
-class SeleniumStealthMiddleware(SeleniumMiddleware):
+class RateLimitRetryMiddleware:
     """
-    scrapy-selenium downloader middleware with ``selenium-stealth`` applied.
+    Slow Scrapy retries after HTTP 429 before ``RetryMiddleware`` requeues.
 
-    Builds the WebDriver via dynamic import (matching scrapy-selenium's own
-    pattern) so the driver name stays configurable via ``SELENIUM_DRIVER_NAME``.
-    Stealth patches navigator properties that headless Chrome normally exposes to
-    bot-detection scripts.
+    ``RATE_LIMIT_RETRY_DELAY`` (seconds) is written to ``request.meta['download_delay']``
+    so Cloudflare/Shopify rate limits are not hammered with immediate retries.
     """
 
-    def __init__(
-        self,
-        driver_name,
-        driver_executable_path,
-        driver_arguments,
-        browser_executable_path,
-    ):
-        webdriver_base_path = f'selenium.webdriver.{driver_name}'
+    def __init__(self, delay_seconds: int):
+        self.delay_seconds = delay_seconds
 
-        # Dynamically load the WebDriver and Options classes for the configured browser.
-        driver_klass = getattr(
-            import_module(f'{webdriver_base_path}.webdriver'), 'WebDriver'
-        )
-        driver_options_klass = getattr(
-            import_module(f'{webdriver_base_path}.options'), 'Options'
-        )
+    @classmethod
+    def from_crawler(cls, crawler):
+        return cls(crawler.settings.getint('RATE_LIMIT_RETRY_DELAY', 60))
 
-        driver_options = driver_options_klass()
-
-        if browser_executable_path:
-            driver_options.binary_location = browser_executable_path
-        for argument in driver_arguments:
-            driver_options.add_argument(argument)
-
-        # Anti-detection flags — must be set before the driver process starts.
-        driver_options.add_argument('--headless')
-        driver_options.add_argument('--disable-blink-features=AutomationControlled')
-        driver_options.add_argument('--disable-dev-shm-usage')
-        driver_options.add_argument('--no-sandbox')
-        driver_options.add_argument('--disable-gpu')
-        driver_options.add_argument('--incognito')
-
-        self.driver = driver_klass(
-            executable_path=driver_executable_path,
-            **{f'{driver_name}_options': driver_options},
-        )
-
-        # Patch JS navigator properties so the browser appears as a normal user agent.
-        stealth(
-            self.driver,
-            languages=['en-US', 'en'],
-            vendor='Google Inc.',
-            platform='Win32',
-            webgl_vendor='Intel Inc.',
-            renderer='Intel Iris OpenGL Engine',
-            fix_hairline=True,
-        )
-
-
-class UndetectedChromeDriver(SeleniumMiddleware):
-    """
-    scrapy-selenium wrapper using ``undetected-chromedriver``.
-
-    ``undetected-chromedriver`` patches the Chrome binary at runtime to remove
-    automation fingerprints; no manual stealth flags are required.
-
-    Note: the constructor signature matches scrapy-selenium's ``from_crawler``
-    factory but only ``options`` is used — the other arguments are intentionally
-    ignored because ``uc.Chrome`` manages its own executable path.
-    """
-
-    def __init__(
-        self,
-        driver_name,           # unused — uc always uses Chrome
-        driver_executable_path,  # unused — uc locates its own patched binary
-        driver_arguments,      # unused — add via options if needed
-        browser_executable_path,  # unused — uc manages the browser path
-    ):
-        options = uc.ChromeOptions()
-        options.add_argument('--headless')
-        self.driver = uc.Chrome(options=options)
+    def process_response(self, request, response, spider):
+        if response.status == 429:
+            request.meta['download_delay'] = max(
+                float(request.meta.get('download_delay', 0)),
+                float(self.delay_seconds),
+            )
+        return response
 
 
 # ---------------------------------------------------------------------------
 # Post-crawl stats (spider_closed signal — see pipelines for FTP export)
 # ---------------------------------------------------------------------------
+
 
 class JobStatLogsMiddleware:
     """

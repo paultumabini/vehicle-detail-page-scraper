@@ -7,6 +7,7 @@ from urllib.parse import urljoin, urlparse
 import scrapy
 from scrapy.loader import ItemLoader
 
+from .base_spider import ScrapebucketSpider
 from ..items import ScrapebucketItem
 from ..spider_helpers.response_json import loads_response_body
 
@@ -16,7 +17,7 @@ _TYPESENSE_FIELD = re.compile(
 )
 
 
-class ZopDealerSpider(scrapy.Spider):
+class ZopDealerSpider(ScrapebucketSpider):
     """
     Zop dealers expose Typesense ``COLLECTION``, ``API_KEY``, and ``TYPESENSE_HOST``
     in ``globalZDProperties()`` on ``/inventory/``. VDP paths are in ``page_url``.

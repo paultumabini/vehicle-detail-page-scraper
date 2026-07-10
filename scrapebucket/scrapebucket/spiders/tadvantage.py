@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 import scrapy
 from scrapy.loader import ItemLoader
 
+from .base_spider import ScrapebucketSpider
 from ..items import ScrapebucketItem
 from ..spider_helpers.response_json import loads_response_body
 from ..spider_helpers.url_qs import (
@@ -15,7 +16,7 @@ from ..spider_helpers.url_qs import (
 )
 
 
-class TadvantageSpider(scrapy.Spider):
+class TadvantageSpider(ScrapebucketSpider):
     """
     ``get_company_id`` maps the public site hostname to Trader API credentials.
 
@@ -26,6 +27,7 @@ class TadvantageSpider(scrapy.Spider):
     name = 'tadvantage'
     domain_name = ''
     page = 1
+    company_id: str | None = None
 
     custom_settings = {
         'DOWNLOADER_MIDDLEWARES': {
@@ -43,12 +45,13 @@ class TadvantageSpider(scrapy.Spider):
 
         dn = self.domain_name.split('.')[0]
 
-        self.company_id = get_company_id(dn)
-        if not self.company_id:
+        company_id = get_company_id(dn)
+        if not company_id:
             return
+        self.company_id = company_id
 
         yield scrapy.Request(
-            url=f'{access_trader_direct_API(self.company_id, self.page, 15)}',
+            url=f'{access_trader_direct_API(company_id, self.page, 15)}',
             callback=self.parse,
         )
 
@@ -82,6 +85,16 @@ class TadvantageSpider(scrapy.Spider):
             loader.add_value('vin', result.get('vin'))
             loader.add_value('vehicle_url', new_vdp_url.replace(' ', '%20'))
             loader.add_value('price', result.get('asking_price'))
+
+            image_data = result.get('image') or {}
+            if isinstance(image_data, dict) and not result.get('placeholder_image'):
+                primary_image = image_data.get('image_original') or image_data.get(
+                    'image_lg'
+                )
+                if primary_image:
+                    loader.add_value('image_urls', primary_image)
+                    loader.add_value('images_count', 1)
+
             loader.add_value('domain', self.domain_name)
             yield loader.load_item()
 
@@ -94,8 +107,11 @@ class TadvantageSpider(scrapy.Spider):
 
         if self.page <= page_limit:
             self.page += 1
+            company_id = self.company_id
+            if not company_id:
+                return
 
             yield scrapy.Request(
-                url=f'{access_trader_direct_API(self.company_id, self.page, 15)}',
+                url=f'{access_trader_direct_API(company_id, self.page, 15)}',
                 callback=self.parse,
             )

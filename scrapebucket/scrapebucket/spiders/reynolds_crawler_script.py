@@ -5,13 +5,14 @@ from fake_useragent import UserAgent
 from scrapy.linkextractors import LinkExtractor
 from scrapy.loader import ItemLoader
 from scrapy.selector import Selector
-from scrapy.spiders import CrawlSpider, Rule
+from scrapy.spiders import Rule
+from .base_spider import ScrapebucketCrawlSpider
 from scrapy_playwright.page import PageMethod
 
 from ..items import ScrapebucketItem
 
 
-class ReynoldsCrawlerScript(CrawlSpider):
+class ReynoldsCrawlerScript(ScrapebucketCrawlSpider):
     name = 'reynolds_crawler_script'
     domain_name = ''
 

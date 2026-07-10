@@ -5,8 +5,10 @@ from datetime import date
 from urllib.parse import quote, urljoin, urlparse
 
 import scrapy
+from scrapy.http.request.form import FormdataType
 from scrapy.loader import ItemLoader
 
+from .base_spider import ScrapebucketSpider
 from ..items import ScrapebucketItem
 from ..spider_helpers.response_json import loads_response_body
 
@@ -16,7 +18,7 @@ _SRP_PATH = '/inventory-page-new'
 _VDP_PATH = re.compile(r'href="(/Inventory/[^"]+)"', re.I)
 
 
-class OmniautoSpider(scrapy.Spider):
+class OmniautoSpider(ScrapebucketSpider):
     """
     Omni dealers render SRP cards in the browser; inventory is loaded from
     ``portal.omni.auto`` after ``Site/WordPressAction`` resolves ``siteID``.
@@ -87,15 +89,16 @@ class OmniautoSpider(scrapy.Spider):
         yield from self._inventory_request(site_id, skip_count=0)
 
     def _inventory_request(self, site_id, skip_count):
+        formdata: FormdataType = {
+            'skip': str(skip_count),
+            'take': str(INVENTORY_PAGE_SIZE),
+        }
         yield scrapy.FormRequest(
             url=(
                 f'{OMNI_API}/Inventory/GetAllVehiclesFiltered'
                 f'?siteID={site_id}&callFromSRP=true'
             ),
-            formdata={
-                'skip': str(skip_count),
-                'take': str(INVENTORY_PAGE_SIZE),
-            },
+            formdata=formdata,
             headers={
                 **self._api_headers(),
                 'Content-Type': 'application/x-www-form-urlencoded',

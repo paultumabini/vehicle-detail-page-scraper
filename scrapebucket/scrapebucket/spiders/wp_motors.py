@@ -5,13 +5,14 @@ from urllib.parse import urlparse
 import scrapy
 from scrapy.linkextractors import LinkExtractor
 from scrapy.loader import ItemLoader
-from scrapy.spiders import CrawlSpider, Rule
+from scrapy.spiders import Rule
+from .base_spider import ScrapebucketCrawlSpider
 from scrapy.utils.project import get_project_settings
 
 from ..items import ScrapebucketItem
 
 
-class WpMotorsSpider(CrawlSpider):
+class WpMotorsSpider(ScrapebucketCrawlSpider):
     """
     Standard crawl from ``/inventory/`` with numeric pagination.
 

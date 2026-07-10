@@ -1,16 +1,15 @@
-"""Dealer Inspire: sitemap table → Selenium VDPs (undetected Chrome for bot-heavy pages)."""
+"""Dealer Inspire: sitemap table → Playwright VDPs for bot-heavy pages."""
 
 from urllib.parse import urlparse
 
-import scrapy
 from scrapy.linkextractors import LinkExtractor
 from scrapy.loader import ItemLoader
-from scrapy_selenium.http import SeleniumRequest
 
+from .base_spider import PLAYWRIGHT_SPIDER_SETTINGS, ScrapebucketPlaywrightSpider
 from ..items import ScrapebucketItem
 
 
-class DealerinspireSpider(scrapy.Spider):
+class DealerinspireSpider(ScrapebucketPlaywrightSpider):
     """
     Starts from the inventory sitemap (tabular links), then loads each VDP in a real browser.
 
@@ -22,15 +21,15 @@ class DealerinspireSpider(scrapy.Spider):
     domain_name = ''
 
     custom_settings = {
-        'DOWNLOADER_MIDDLEWARES': {'scrapebucket.middlewares.UndetectedChromeDriver': 300},
+        **PLAYWRIGHT_SPIDER_SETTINGS,
         'SPIDER_MIDDLEWARES': {'scrapebucket.middlewares.JobStatLogsMiddleware': 543},
     }
 
     def start_requests(self):
         self.domain_name = '.'.join(urlparse(self.url).netloc.split('.')[-2:])
 
-        yield SeleniumRequest(
-            url=f'{self.url}dealer-inspire-inventory/inventory_sitemap/',
+        yield self.playwright_request(
+            f'{self.url}dealer-inspire-inventory/inventory_sitemap/',
         )
 
     def parse(self, response):
@@ -38,10 +37,7 @@ class DealerinspireSpider(scrapy.Spider):
         for link in unit_urls:
             if not link.url:
                 continue
-            yield SeleniumRequest(
-                url=link.url,
-                callback=self.parse_data,
-            )
+            yield self.playwright_request(link.url, callback=self.parse_data)
 
     def parse_data(self, response):
         category = 'used' if 'used' in response.url else 'new'
@@ -56,7 +52,9 @@ class DealerinspireSpider(scrapy.Spider):
             ).getall(),
         ]
 
-        as_unit = response.xpath('//div[@class="vdp-title__vehicle-info"]/h1/text()').get()
+        as_unit = response.xpath(
+            '//div[@class="vdp-title__vehicle-info"]/h1/text()'
+        ).get()
         price = (
             response.xpath('//span[@class="price"]/text()').get()
             or response.xpath('//span[@class="pricing-item__price "]/text()').get()
@@ -69,13 +67,17 @@ class DealerinspireSpider(scrapy.Spider):
         vin1 = response.xpath(
             '//ul[@class="vdp-title__vin-stock"]/li[1]/..//span[@id="vin"]/text()'
         ).get()
-        stock_number2 = response.xpath('(//span[@class="vinstock-number"]/text())[1]').get()
+        stock_number2 = response.xpath(
+            '(//span[@class="vinstock-number"]/text())[1]'
+        ).get()
         vin2 = response.xpath('(//span[@class="vinstock-number"]/text())[2]').get()
 
         stock_number = stock_number1 or stock_number2
         vin = vin1 or vin2
 
-        loader = ItemLoader(item=ScrapebucketItem(), selector=response, response=response)
+        loader = ItemLoader(
+            item=ScrapebucketItem(), selector=response, response=response
+        )
         loader.add_value('stock_number', stock_number)
         loader.add_value('vin', vin)
         loader.add_value('vehicle_url', response.url)

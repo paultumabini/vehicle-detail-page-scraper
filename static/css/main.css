@@ -1788,10 +1788,10 @@ body.unit-modal-open {
   inset: 0;
   z-index: 1050;
   background: rgba(15, 23, 42, 0.55);
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
-  padding: 2rem 1rem;
-  overflow-y: auto;
+  padding: 1rem;
+  overflow: hidden;
 }
 
 #unitDetailModal.is-open {
@@ -1800,8 +1800,15 @@ body.unit-modal-open {
 
 #unitDetailModal .modal-dialog {
   width: 100%;
-  max-width: 1140px;
-  margin: 1rem auto;
+  max-width: 36rem;
+  margin: 0 auto;
+  max-height: calc(100dvh - 2rem);
+  display: flex;
+  flex-direction: column;
+}
+
+#unitDetailModal .modal-dialog:has(.vdp-unit-modal__body--gallery) {
+  max-width: 40rem;
 }
 
 #unitDetailModal .modal-content {
@@ -1809,18 +1816,66 @@ body.unit-modal-open {
   border-radius: var(--vdp-radius);
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100dvh - 2rem);
 }
 
 #unitDetailModal .modal-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 1rem 1.25rem;
+  gap: 0.75rem;
+  padding: 0.875rem 1rem;
   border-bottom: 1px solid var(--vdp-border);
+  flex-shrink: 0;
+}
+
+#unitDetailModal .modal-title {
+  margin: 0;
+  font-size: 0.9375rem;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 #unitDetailModal .modal-body {
-  padding: 1.25rem;
+  padding: 1rem;
+  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+@media (max-width: 640px) {
+  #unitDetailModal {
+    padding: 0;
+    align-items: stretch;
+  }
+
+  #unitDetailModal .modal-dialog,
+  #unitDetailModal .modal-dialog:has(.vdp-unit-modal__body--gallery) {
+    max-width: none;
+    width: 100%;
+    max-height: 100dvh;
+    margin: 0;
+  }
+
+  #unitDetailModal .modal-content {
+    max-height: 100dvh;
+    min-height: 100dvh;
+    border-radius: 0;
+  }
+
+  #unitDetailModal .modal-header {
+    padding: 0.75rem 1rem;
+  }
+
+  #unitDetailModal .modal-body {
+    padding: 0.875rem 1rem 1.25rem;
+  }
 }
 
 #unitDetailModal .close-btn {
@@ -2217,6 +2272,23 @@ body.vdp-scrape-loading {
   color: var(--vdp-text-muted);
 }
 
+@media (max-width: 480px) {
+  .vdp-unit-modal__field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    margin-bottom: 0.65rem;
+  }
+
+  .vdp-unit-modal__label {
+    min-width: 0;
+  }
+
+  .vdp-unit-modal__field .vdp-cell-url {
+    word-break: break-all;
+  }
+}
+
 .vdp-unit-modal__actions {
   display: flex;
   flex-wrap: wrap;
@@ -2254,10 +2326,18 @@ body.vdp-scrape-loading {
 
 .vdp-unit-modal__images {
   margin-top: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  text-align: center;
 }
 
 .vdp-unit-modal__table-wrap {
   margin-top: 0.75rem;
+  max-height: min(50vh, 24rem);
+  overflow-y: auto;
+  width: 100%;
 }
 
 /* Image slideshow — mountImageCarousel() in datascraped.js */
@@ -2265,6 +2345,36 @@ body.vdp-scrape-loading {
   display: grid;
   place-items: center;
   padding: 2rem 0;
+  width: 100%;
+}
+
+.vdp-carousel {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.vdp-carousel__item {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.vdp-carousel__item a {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+}
+
+.vdp-carousel__item--visible {
+  min-height: min(38vh, 20rem);
+}
+
+.vdp-unit-modal__body--gallery .vdp-carousel__item--visible {
+  min-height: min(58vh, 28rem);
 }
 
 .vdp-carousel__item--hidden {
@@ -2272,10 +2382,43 @@ body.vdp-scrape-loading {
 }
 
 .vdp-carousel__image {
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
   max-width: 100%;
+  width: auto;
+  max-height: min(38vh, 20rem);
   height: auto;
+  object-fit: contain;
+  object-position: center center;
   border-radius: 0.5rem;
   border: 1px solid var(--vdp-border);
+}
+
+.vdp-unit-modal__body--gallery .vdp-carousel__image {
+  max-height: min(58vh, 28rem);
+}
+
+@media (max-width: 640px) {
+  .vdp-carousel__item--visible {
+    min-height: min(32vh, 14rem);
+  }
+
+  .vdp-unit-modal__body--gallery .vdp-carousel__item--visible {
+    min-height: min(48vh, 20rem);
+  }
+
+  .vdp-carousel__image {
+    max-height: min(32vh, 14rem);
+  }
+
+  .vdp-unit-modal__body--gallery .vdp-carousel__image {
+    max-height: min(48vh, 20rem);
+  }
+
+  .vdp-unit-modal__table-wrap {
+    max-height: min(40vh, 18rem);
+  }
 }
 
 .vdp-carousel__actions {

@@ -35,16 +35,6 @@ RETRY_ENABLED = True
 
 REQUEST_FINGERPRINTER_IMPLEMENTATION = '2.7'
 
-# --- Selenium (scrapy-selenium) ---
-# Override locally: absolute path to chromedriver or rely on PATH.
-# ``webdriver_manager`` snippet kept in git history; prefer a pinned binary in CI/prod.
-from shutil import which
-
-chrome_path = which('chromedriver')
-
-SELENIUM_DRIVER_NAME = 'chrome'
-SELENIUM_DRIVER_EXECUTABLE_PATH = '/home/pt/Dev/Projects/django/aim/webscraping/scrapebucket/chromedriver'
-
 # Global spider middleware: crawl stats → SpiderLog (see middlewares).
 # VDP CSV → FTP export lives in ITEM_PIPELINES (VdpUrlFtpExportPipeline).
 SPIDER_MIDDLEWARES = {
@@ -56,4 +46,5 @@ SPIDER_MIDDLEWARES = {
 # middlewares and pipelines can import ORM models without each needing their own
 # setup block.  The helper is idempotent; repeat calls from those modules are no-ops.
 from scrapebucket.django_setup import ensure_django  # noqa: E402
+
 ensure_django()

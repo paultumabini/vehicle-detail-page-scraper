@@ -1,50 +1,52 @@
-"""WordPress + Avada theme: Selenium discovers inventory page count, then lists + VDPs."""
+"""WordPress + Avada theme: Playwright discovers inventory page count, then lists + VDPs."""
 
 from urllib.parse import urlparse
 
 import scrapy
 from scrapy.linkextractors import LinkExtractor
 from scrapy.loader import ItemLoader
-from scrapy_selenium.http import SeleniumRequest
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support import expected_conditions as EC
+from scrapy_playwright.page import PageMethod
 
+from .base_spider import PLAYWRIGHT_SPIDER_SETTINGS, ScrapebucketPlaywrightSpider
 from ..items import ScrapebucketItem
-from ..spider_helpers.selenium_helper import SeleniumHelper
+from ..spider_helpers.playwright_helper import PlaywrightHelper
 
 
-class WpAvadaSpider(scrapy.Spider):
+class WpAvadaSpider(ScrapebucketPlaywrightSpider):
     """
-    Pagination is not always in the first HTML response; Selenium counts ``/inventory/page/N``.
+    Pagination is not always in the first HTML response; Playwright counts
+    ``/inventory/page/N``.
 
-    ``get_pagination_remove_text`` returns the highest page index seen on the listing chrome.
+    ``get_pagination_remove_text_legacy`` returns the highest page index seen on
+    the listing chrome (Avada-specific parsing).
     """
 
     name = 'wp_avada'
     domain_name = ''
 
     custom_settings = {
+        **PLAYWRIGHT_SPIDER_SETTINGS,
         'DOWNLOAD_DELAY': 1,
     }
 
     def start_requests(self):
         self.domain_name = '.'.join(urlparse(self.url).netloc.split('.')[-2:])
 
-        pagination_selector = '//a[@class="inactive"]/text()'
-        wait_until_selector = '//a[@class="inactive"]'
-        pages = SeleniumHelper(
+        wait_until_selector = 'a.inactive'
+        pages = PlaywrightHelper(
             f'{self.url}inventory/',
-            pagination_selector,
             wait_until_selector,
-        ).get_pagination_remove_text()
+            wait_until_selector,
+        ).get_page_num_src('get_pagination_remove_text_legacy')
 
         # ``range(pages + 1)`` includes page 0/1-style first URL segment used by this theme.
         for page in range(pages + 1):
-            yield SeleniumRequest(
-                url=f'{self.url}inventory/page/{page}',
-                wait_time=10,
-                wait_until=EC.element_to_be_clickable((By.XPATH, wait_until_selector)),
+            yield self.playwright_request(
+                f'{self.url}inventory/page/{page}',
                 callback=self.parse,
+                page_methods=[
+                    PageMethod('wait_for_selector', wait_until_selector),
+                ],
             )
 
     def parse(self, response):
@@ -63,7 +65,9 @@ class WpAvadaSpider(scrapy.Spider):
 
         loader = ItemLoader(item=ScrapebucketItem(), selector=response)
         loader.add_value('vehicle_url', response.url)
-        loader.add_xpath('stock_number', '//li[contains(text(),"Stock #: ")]/span/text()')
+        loader.add_xpath(
+            'stock_number', '//li[contains(text(),"Stock #: ")]/span/text()'
+        )
         loader.add_xpath('vin', '//li[contains(text(),"VIN: ")]/span/text()')
         loader.add_xpath(
             'price',

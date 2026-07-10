@@ -6,13 +6,14 @@ from scrapy.loader import ItemLoader
 from scrapy.selector import Selector
 from scrapy_playwright.page import PageMethod
 
+from .base_spider import ScrapebucketSpider
 from ..items import ScrapebucketItem
 
 # from scrapy.utils.reactor import install_reactor
 # install_reactor('twisted.internet.asyncioreactor.AsyncioSelectorReactor')
 
 
-class ReynoldsSpider(scrapy.Spider):
+class ReynoldsSpider(ScrapebucketSpider):
     name = 'reynolds'
     domain_name = ''
 

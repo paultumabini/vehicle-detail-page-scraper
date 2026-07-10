@@ -4,11 +4,12 @@ import scrapy
 from scrapy.loader import ItemLoader
 from scrapy.utils.project import get_project_settings
 
+from .base_spider import ScrapebucketSpider
 from ..items import ScrapebucketItem
 from ..spider_helpers.response_json import loads_response_body
 
 
-class SeowindsorSpider(scrapy.Spider):
+class SeowindsorSpider(ScrapebucketSpider):
     name = 'seowindsor'
     domain_name = ''
 

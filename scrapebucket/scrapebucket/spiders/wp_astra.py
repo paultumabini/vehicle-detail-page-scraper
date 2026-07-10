@@ -5,12 +5,13 @@ from urllib.parse import urlparse
 import scrapy
 from scrapy.linkextractors import LinkExtractor
 from scrapy.loader import ItemLoader
-from scrapy.spiders import CrawlSpider, Rule
+from scrapy.spiders import Rule
+from .base_spider import ScrapebucketCrawlSpider
 
 from ..items import ScrapebucketItem
 
 
-class WpAstraSpider(CrawlSpider):
+class WpAstraSpider(ScrapebucketCrawlSpider):
     """
     Listing cards link from ``/vehicles``; specs on VDP use label/value pairs with brittle XPath.
 

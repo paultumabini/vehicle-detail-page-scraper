@@ -3,11 +3,12 @@ from urllib.parse import urlparse
 import scrapy
 from scrapy.loader import ItemLoader
 
+from .base_spider import ScrapebucketSpider
 from ..items import ScrapebucketItem
 from ..spider_helpers.response_json import loads_response_body
 
 
-class DealerdotcomSpider(scrapy.Spider):
+class DealerdotcomSpider(ScrapebucketSpider):
     name = 'dealerdotcom'
     domain_name = ''
 

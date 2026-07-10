@@ -4,61 +4,63 @@ import scrapy
 from scrapy.loader import ItemLoader
 from scrapy.selector import Selector
 
+from .base_spider import ScrapebucketSpider
 from ..items import ScrapebucketItem
 from ..spider_helpers.response_json import loads_response_body
 
 
-class EdealerSpider(scrapy.Spider):
-    """Scrape eDealer inventory listings (legacy AJAX API and v4 WordPress HTML)."""
+class EdealerSpider(ScrapebucketSpider):
+    """Scrape eDealer inventory listings.
+
+    Supports three listing modes, detected per site from the first response:
+    - Legacy AJAX: POST ``/{new,used}/`` returns JSON with ``vehicleCellHTML``.
+    - v4 paginated: ``body[data-pagination="paginated"]`` with page-next links.
+    - v4 infinite: ``body[data-pagination="infinite"]`` loads pages via admin-ajax.
+
+    v4 listing HTML is fetched via ``wp-admin/admin-ajax.php`` (``vlp_dynamic_query``).
+    Cloudflare challenges direct GETs to ``/inventory/*`` but leaves admin-ajax open.
+    """
 
     name = 'edealer'
     domain_name = ''
 
-    # Browser UA shared by v4 GET requests; some sites 403 without it.
     _USER_AGENT = (
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
-        '(KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36'
+        '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
     )
 
-    def _browser_headers(self, referer=None):
-        # v4 listing pages are server-rendered HTML; use browser-like headers.
-        headers = {
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    def _ajax_headers(self, referer):
+        return {
+            'Accept': '*/*',
             'Accept-Language': 'en-US,en;q=0.5',
+            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+            'Origin': f'{self.url}',
+            'Referer': referer,
             'User-Agent': self._USER_AGENT,
+            'X-Requested-With': 'XMLHttpRequest',
         }
-        if referer:
-            headers['Referer'] = referer
-        return headers
 
     def start_requests(self):
         self.domain_name = '.'.join(urlparse(self.url).netloc.split('.')[-2:]).replace(
             '-', ''
         )
 
-        # eDealer v4 (WordPress): GET /inventory/{new,used}/ — vehicles in data-* attrs.
+        # eDealer v4: load listing HTML via admin-ajax (bypasses Cloudflare on /inventory/*).
         for path in ('inventory/new/', 'inventory/used/'):
-            yield scrapy.Request(
-                url=f'{self.url}{path}',
-                callback=self.parse,
-                headers=self._browser_headers(),
+            referer = f'{self.url.rstrip("/")}/{path}'
+            yield self._admin_ajax_request(
+                listing_path=path,
+                page=1,
+                listing_ctx={
+                    'listing_path': path,
+                    'category': self._listing_category_from_path(path),
+                    'referer': referer,
+                    'seen_ids': (),
+                    'page': 1,
+                },
             )
 
-        headers = {
-            'Accept': '*/*',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Accept-Language': 'en-US,en;q=0.5',
-            'Cache-Control': 'no-cache',
-            'Connection': 'keep-alive',
-            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-            'Origin': f'{self.url}',
-            'Referer': f'{self.url}new/',
-            'Sec-Ch-ua': '"Google Chrome";v="111", "Not(A:Brand";v="8", "Chromium";v="111"',
-            'Sec-Fetch-Mode': 'cors',
-            'Sec-Fetch-Site': 'same-origin',
-            'user-agent': self._USER_AGENT,
-            'X-Requested-With': 'XMLHttpRequest',
-        }
+        headers = self._ajax_headers(f'{self.url}new/')
 
         # Legacy eDealer: POST /{new,used}/ returns JSON (vehicleCellHTML).
         # On migrated sites these 301 to /inventory/* and POST returns 404 — harmless.
@@ -74,6 +76,26 @@ class EdealerSpider(scrapy.Spider):
                 meta={'legacy_ajax': True},
             )
 
+    def _admin_ajax_request(self, listing_path, page, listing_ctx):
+        ajax_url = f'{self.url.rstrip("/")}/wp-admin/admin-ajax.php'
+        if page > 1:
+            ajax_url = f'{ajax_url}?page={page}'
+        return scrapy.FormRequest(
+            url=ajax_url,
+            method='POST',
+            headers=self._ajax_headers(listing_ctx['referer']),
+            formdata={
+                'action': 'vlp_dynamic_query',
+                'current_path': listing_path,
+            },
+            callback=self.parse,
+            meta=self._listing_meta(
+                listing_ctx,
+                v4_ajax=True,
+                v4_page=page,
+            ),
+        )
+
     def parse(self, response):
         # Legacy AJAX returns JSON with Content-Type text/html — detect by leading `{`/`[`.
         body = response.body.lstrip()
@@ -85,7 +107,11 @@ class EdealerSpider(scrapy.Spider):
                 yield from self._parse_ajax(response, res)
                 return
 
-        # v4 listing HTML only; skip legacy POST failures and bad redirects.
+        if response.meta.get('v4_ajax'):
+            yield from self._parse_inventory_html(response)
+            return
+
+        # v4 listing HTML from direct GET (non-Cloudflare sites); skip legacy POST noise.
         if response.meta.get('legacy_ajax') or 'inventory/' not in response.url:
             return
 
@@ -93,7 +119,9 @@ class EdealerSpider(scrapy.Spider):
 
     def _parse_inventory_html(self, response):
         # v4 cards expose VIN/slug on the listing row; VDP is /inventory/{slug}/.
-        seen_ids = set()
+        listing_ctx = self._listing_context(response)
+        seen_ids = set(listing_ctx['seen_ids'])
+        items_this_page = 0
 
         for card in response.css('[data-inventoryitemid]'):
             item_id = card.attrib.get('data-inventoryitemid')
@@ -103,14 +131,14 @@ class EdealerSpider(scrapy.Spider):
                 continue
             seen_ids.add(item_id)
 
-            category = (
+            item_category = (
                 card.attrib.get('data-state-of-vehicle')
                 or card.attrib.get('data-conditionName')
-                or self._listing_category(response)
+                or listing_ctx['category']
             )
 
             loader = ItemLoader(ScrapebucketItem())
-            loader.add_value('category', category)
+            loader.add_value('category', item_category)
             loader.add_value('year', card.attrib.get('data-year'))
             loader.add_value('make', card.attrib.get('data-make'))
             loader.add_value('model', card.attrib.get('data-model'))
@@ -120,15 +148,71 @@ class EdealerSpider(scrapy.Spider):
             loader.add_value('vehicle_url', response.urljoin(f'/inventory/{slug}/'))
             loader.add_value('price', card.attrib.get('data-price'))
             loader.add_value('domain', self.domain_name)
+            items_this_page += 1
             yield loader.load_item()
 
-        # Follow page-next only (one page at a time) to avoid Cloudflare 403s.
+        listing_ctx['seen_ids'] = tuple(seen_ids)
+        yield from self._follow_v4_pagination(response, listing_ctx, items_this_page)
+
+    def _listing_context(self, response):
+        listing_path = response.meta.get('listing_path')
+        if not listing_path and 'inventory/' in response.url:
+            listing_path = urlparse(response.url).path
+            if not listing_path.endswith('/'):
+                listing_path = f'{listing_path}/'
+
+        referer = response.meta.get('listing_referer')
+        if not referer and listing_path:
+            referer = f'{self.url.rstrip("/")}{listing_path}'
+
+        return {
+            'listing_path': listing_path,
+            'category': response.meta.get('category') or self._listing_category(response),
+            'referer': referer,
+            'seen_ids': response.meta.get('seen_ids') or (),
+            'page': response.meta.get('v4_page', 1),
+        }
+
+    def _listing_meta(self, listing_ctx, **extra):
+        meta = {
+            'listing_path': listing_ctx['listing_path'],
+            'category': listing_ctx['category'],
+            'listing_referer': listing_ctx['referer'],
+            'seen_ids': listing_ctx['seen_ids'],
+        }
+        meta.update(extra)
+        return meta
+
+    def _follow_v4_pagination(self, response, listing_ctx, items_this_page):
+        if not items_this_page:
+            return
+
+        listing_path = listing_ctx['listing_path']
+        if not listing_path:
+            return
+
+        # admin-ajax ?page=N works for both infinite-scroll and paginated v4 sites.
+        if response.meta.get('v4_ajax'):
+            yield self._admin_ajax_request(
+                listing_path=listing_path,
+                page=listing_ctx['page'] + 1,
+                listing_ctx=listing_ctx,
+            )
+            return
+
+        # Non-Cloudflare sites may still serve full HTML pages with link pagination.
         next_href = response.css('nav.pagination-base li.page-next a::attr(href)').get()
         if next_href:
-            yield response.follow(
-                next_href,
+            yield scrapy.Request(
+                response.urljoin(next_href),
                 callback=self.parse,
-                headers=self._browser_headers(referer=response.url),
+                headers={
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.5',
+                    'User-Agent': self._USER_AGENT,
+                    'Referer': response.url,
+                },
+                meta=self._listing_meta(listing_ctx),
             )
 
     def _parse_ajax(self, response, res):
@@ -184,25 +268,10 @@ class EdealerSpider(scrapy.Spider):
         has_next_page = res.get('nextURL')
 
         if has_next_page:
-            headers = {
-                'Accept': '*/*',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'Accept-Language': 'en-US,en;q=0.5',
-                'Cache-Control': 'no-cache',
-                'Connection': 'keep-alive',
-                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-                'Origin': f'{self.url}',
-                'Referer': f'{self.url}{has_next_page}',
-                'Sec-Ch-ua': '"Google Chrome";v="111", "Not(A:Brand";v="8", "Chromium";v="111"',
-                'Sec-Fetch-Mode': 'cors',
-                'Sec-Fetch-Site': 'same-origin',
-                'user-agent': self._USER_AGENT,
-                'X-Requested-With': 'XMLHttpRequest',
-            }
             yield scrapy.FormRequest(
                 url=f'{self.url}{has_next_page}',
                 method='POST',
-                headers=headers,
+                headers=self._ajax_headers(f'{self.url}{has_next_page}'),
                 formdata={
                     'ajax': 'true',
                     'refresh': 'true',
@@ -212,10 +281,21 @@ class EdealerSpider(scrapy.Spider):
             )
 
     @staticmethod
+    def _listing_category_from_path(path):
+        path = path.lower()
+        if 'used' in path:
+            return 'used'
+        if 'new' in path:
+            return 'new'
+        return ''
+
+    @staticmethod
     def _listing_category(response):
         url = response.url.lower()
-        if '/used' in url or 'inventory/used' in url:
-            return 'used'
-        if '/new' in url or 'inventory/new' in url:
-            return 'new'
+        listing_path = (response.meta.get('listing_path') or '').lower()
+        for candidate in (listing_path, url):
+            if '/used' in candidate or 'inventory/used' in candidate:
+                return 'used'
+            if '/new' in candidate or 'inventory/new' in candidate:
+                return 'new'
         return ''

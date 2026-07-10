@@ -4,11 +4,12 @@ import scrapy
 from scrapy.loader import ItemLoader
 from scrapy.selector import Selector
 
+from .base_spider import ScrapebucketSpider
 from ..items import ScrapebucketItem
 from ..spider_helpers.response_json import loads_response_body
 
 
-class FoxdealerSpider(scrapy.Spider):
+class FoxdealerSpider(ScrapebucketSpider):
     name = 'foxdealer'
     domain_name = ''
 

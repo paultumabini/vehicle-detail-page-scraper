@@ -5,12 +5,13 @@ from urllib.parse import urlparse
 import scrapy
 from scrapy.linkextractors import LinkExtractor
 from scrapy.loader import ItemLoader
-from scrapy.spiders import CrawlSpider, Rule
+from scrapy.spiders import Rule
+from .base_spider import ScrapebucketCrawlSpider
 
 from ..items import ScrapebucketItem
 
 
-class CsekcreativeSpider(CrawlSpider):
+class CsekcreativeSpider(ScrapebucketCrawlSpider):
     name = 'csekcreative'
     domain_name = ''
 

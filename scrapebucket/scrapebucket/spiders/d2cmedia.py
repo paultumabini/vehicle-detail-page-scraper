@@ -7,9 +7,11 @@ from typing import Any
 from urllib.parse import urljoin, urlparse
 
 import scrapy
+from scrapy.http.request.form import FormdataType
 from scrapy.loader import ItemLoader
 from scrapy.selector import Selector
 
+from .base_spider import ScrapebucketSpider
 from ..items import ScrapebucketItem
 from ..spider_helpers.response_json import loads_response_body
 
@@ -18,7 +20,7 @@ _FILTER_VARIANTS = ('a1b13q', 'a1b123d19q')
 _FILTER_ID = re.compile(r'id="filterid"\s+value="([^"]+)"', re.I)
 
 
-class D2cmediaSpider(scrapy.Spider):
+class D2cmediaSpider(ScrapebucketSpider):
     """
     D2C UsedSrp2 dealers load inventory through::
 
@@ -106,12 +108,13 @@ class D2cmediaSpider(scrapy.Spider):
         max_page = basic['fltPageId'][1]
         proxy['fltPageId'] = [page, max_page]
         body_inner = self._filterid_body(proxy)
+        formdata: FormdataType = {'filterid': body_inner}
 
         yield scrapy.FormRequest(
             url=(
                 f'{base_url}{lang}/ajax/getSearchVehiclesFromFilterObject?wswidth=1920'
             ),
-            formdata={'filterid': body_inner},
+            formdata=formdata,
             callback=self.parse_inventory,
             meta={
                 'base_url': base_url,

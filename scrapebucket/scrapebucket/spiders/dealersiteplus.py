@@ -6,7 +6,8 @@ from urllib.parse import urlparse
 import scrapy
 from scrapy.linkextractors import LinkExtractor
 from scrapy.loader import ItemLoader
-from scrapy.spiders import CrawlSpider, Rule
+from scrapy.spiders import Rule
+from .base_spider import ScrapebucketCrawlSpider
 from scrapy.utils.project import get_project_settings
 
 from ..items import ScrapebucketItem
@@ -21,7 +22,7 @@ INVENTORY_PATHS = (
 )
 
 
-class DealersiteplusSpider(CrawlSpider):
+class DealersiteplusSpider(ScrapebucketCrawlSpider):
     """
     Entry paths differ by site install (``vehicles``, ``new-inventory``, ``all-inventory``).
 

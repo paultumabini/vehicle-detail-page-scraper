@@ -50,9 +50,6 @@ requests==2.32.5
 requests-file==3.0.1
 Scrapy==2.14.1
 scrapy-playwright==0.0.46
-scrapy-selenium==0.0.7
-selenium==4.41.0
-selenium-stealth==1.0.6
 service-identity==24.2.0
 setuptools==82.0.0
 six==1.17.0
@@ -64,10 +61,8 @@ trio==0.33.0
 trio-websocket==0.12.2
 Twisted==25.5.0
 typing_extensions==4.15.0
-undetected-chromedriver==3.5.5
 urllib3==2.6.3
 w3lib==2.4.0
-webdriver-manager==4.0.2
 websocket-client==1.9.0
 websockets==16.0
 wheel==0.46.3

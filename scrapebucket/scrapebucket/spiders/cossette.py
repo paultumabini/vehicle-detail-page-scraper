@@ -4,12 +4,13 @@ import scrapy
 from scrapy.loader import ItemLoader
 from scrapy.selector import Selector
 
+from .base_spider import ScrapebucketSpider
 from ..items import ScrapebucketItem
 from ..spider_helpers.response_json import loads_response_body
 from ..utils import request_all_urls
 
 
-class CossetteSpider(scrapy.Spider):
+class CossetteSpider(ScrapebucketSpider):
     name = 'cossette'
     base_url_api = 'https://oserv3.oreganscdn.com/api/vehicle-inventory-search/?'
     domain_name = ''

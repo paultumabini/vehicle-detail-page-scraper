@@ -7,13 +7,14 @@ import scrapy
 from fake_useragent import UserAgent
 from scrapy.loader import ItemLoader
 
+from .base_spider import ScrapebucketSpider
 from ..items import ScrapebucketItem
 from ..spider_helpers.response_json import loads_response_body
 
 _VDP_ID_RE = re.compile(r'-(\d+)(?:/)?$')
 
 
-class LeadboxSpider(scrapy.Spider):
+class LeadboxSpider(ScrapebucketSpider):
     """
     Leadbox-powered dealer sites expose:
     - VDP URLs in ``/inventory.xml``

@@ -6,10 +6,11 @@ import scrapy
 from scrapy.linkextractors import LinkExtractor
 from scrapy.loader import ItemLoader
 
+from .base_spider import ScrapebucketSpider
 from ..items import ScrapebucketItem
 
 
-class AutobunnySpider(scrapy.Spider):
+class AutobunnySpider(ScrapebucketSpider):
     name = 'autobunny'
     domain_name = ''
 

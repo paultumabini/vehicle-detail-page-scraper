@@ -1,16 +1,19 @@
 from urllib.parse import urlparse
 
 import scrapy
+from scrapy.http.request.form import FormdataType
 from scrapy.loader import ItemLoader
 
+from .base_spider import ScrapebucketSpider
 from ..items import ScrapebucketItem
 from ..spider_helpers.response_json import loads_response_body
-from ..utils import COOKIE_NOVLANBROS, cookie_parser
 
 
-class WebstagerSpider(scrapy.Spider):
+class WebstagerSpider(ScrapebucketSpider):
     name = 'webstager'
     domain_name = ''
+
+    _REDIRECT_STATUSES = (301, 302, 303, 307, 308)
 
     custom_settings = {
         'DOWNLOADER_MIDDLEWARES': {
@@ -20,19 +23,45 @@ class WebstagerSpider(scrapy.Spider):
 
     def start_requests(self):
         self.domain_name = '.'.join(urlparse(self.url).netloc.split('.')[-2:])
+        inventory_probe = f'{self.url}inventory/'
 
-        yield scrapy.FormRequest(
-            url=f'{self.url}inventory/',
+        # Resolve brand-specific inventory paths (e.g. /inventory/ -> /ford/inventory/)
+        # without following redirects on the POST, which would downgrade to GET + HTML.
+        yield scrapy.Request(
+            url=inventory_probe,
+            callback=self.resolve_inventory_url,
+            meta={
+                'dont_redirect': True,
+                'handle_httpstatus_list': list(self._REDIRECT_STATUSES),
+            },
+        )
+
+    def resolve_inventory_url(self, response):
+        if response.status in self._REDIRECT_STATUSES:
+            location = response.headers.get('Location', b'').decode().strip()
+            inventory_url = response.urljoin(location) if location else response.url
+        else:
+            inventory_url = response.url
+
+        yield self._inventory_search_request(inventory_url, page=1)
+
+    def _inventory_search_request(self, inventory_url, page):
+        formdata: FormdataType = [
+            ('actionList', 'search'),
+            *([('p', str(page))] if page > 1 else []),
+        ]
+
+        return scrapy.FormRequest(
+            url=inventory_url,
             method='POST',
-            cookies=cookie_parser(COOKIE_NOVLANBROS),
-            headers={'Referer': f'{self.url}inventory/'},
-            formdata={'actionList': 'search'},
+            headers={'Referer': inventory_url},
+            formdata=formdata,
+            callback=self.parse,
+            meta={'inventory_url': inventory_url},
         )
 
     def parse(self, response):
-        res_json = loads_response_body(
-            response.body, url=response.url, label=self.name
-        )
+        res_json = loads_response_body(response.body, url=response.url, label=self.name)
         if not res_json:
             return
 
@@ -59,3 +88,9 @@ class WebstagerSpider(scrapy.Spider):
             loader.add_value('domain', self.domain_name)
 
             yield loader.load_item()
+
+        current_page = inventory.get('currentPage') or 1
+        total_pages = inventory.get('totalPages') or 1
+        inventory_url = response.meta['inventory_url']
+        if current_page < total_pages:
+            yield self._inventory_search_request(inventory_url, page=current_page + 1)
