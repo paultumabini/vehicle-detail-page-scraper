@@ -14,7 +14,9 @@ INVENTORY_API = (
     'https://pmy3it3grc.execute-api.ca-central-1.amazonaws.com/inventory-list'
 )
 _MAIN_JS = re.compile(r'main\.[a-f0-9]+\.js')
-_DEALER_ID = re.compile(r'dealer_id","(\d+)"')
+# Globals init uses ``this.dealer_id=N``; older builds used Angular metadata
+# ``dealer_id","N"`` (number after the key).
+_DEALER_ID = re.compile(r'this\.dealer_id=(\d+)|dealer_id","(\d+)"')
 _CONDITIONS = (
     ('NEW', 'new', 'new'),
     ('USED', 'used', 'used'),
@@ -67,7 +69,7 @@ class UxautoSpider(ScrapebucketSpider):
             self.logger.warning('uxauto: dealer_id not found in %s', response.url)
             return
 
-        dealer_id = dealer_match.group(1)
+        dealer_id = dealer_match.group(1) or dealer_match.group(2)
         base_url = response.meta['base_url']
         for api_condition, list_path, category in _CONDITIONS:
             yield scrapy.Request(

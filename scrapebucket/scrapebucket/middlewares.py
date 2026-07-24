@@ -5,6 +5,7 @@ Classes
 -------
 ScrapebucketSpiderMiddleware     — thin pass-through spider middleware (boilerplate)
 ScrapebucketDownloaderMiddleware — thin pass-through downloader middleware (boilerplate)
+RateLimitRetryMiddleware         — delayed retries for HTTP 429 (honours Retry-After)
 JobStatLogsMiddleware            — persists crawl stats to ``SpiderLog`` on spider close
 
 Django ORM is bootstrapped via ``ensure_django()`` (idempotent; a no-op when
@@ -18,6 +19,9 @@ import logging
 import pytz
 from django.db import close_old_connections
 from scrapy import signals
+from scrapy.http import Request, Response
+from scrapy.utils.defer import deferred_to_future
+from twisted.internet import reactor, task
 
 from scrapebucket.django_setup import ensure_django
 
@@ -96,26 +100,77 @@ class ScrapebucketDownloaderMiddleware:
 
 class RateLimitRetryMiddleware:
     """
-    Slow Scrapy retries after HTTP 429 before ``RetryMiddleware`` requeues.
+    Retry HTTP 429 after a real wall-clock delay (Twisted ``deferLater``).
 
-    ``RATE_LIMIT_RETRY_DELAY`` (seconds) is written to ``request.meta['download_delay']``
-    so Cloudflare/Shopify rate limits are not hammered with immediate retries.
+    Scrapy's ``RetryMiddleware`` requeues immediately; ``download_delay`` in
+    ``request.meta`` does not slow those retries.  This middleware handles 429
+    exclusively and should run with 429 removed from ``RETRY_HTTP_CODES``.
+
+    Start/inventory requests may set ``meta['rate_limit_start'] = True`` for a
+    lower retry budget (fail fast when the egress IP is already blocked).
     """
 
-    def __init__(self, delay_seconds: int):
-        self.delay_seconds = delay_seconds
+    def __init__(self, crawler, default_delay: int, max_retries: int, start_max_retries: int):
+        self.crawler = crawler
+        self.default_delay = default_delay
+        self.max_retries = max_retries
+        self.start_max_retries = start_max_retries
 
     @classmethod
     def from_crawler(cls, crawler):
-        return cls(crawler.settings.getint('RATE_LIMIT_RETRY_DELAY', 60))
+        settings = crawler.settings
+        return cls(
+            crawler,
+            default_delay=settings.getint('RATE_LIMIT_RETRY_DELAY', 60),
+            max_retries=settings.getint('RATE_LIMIT_MAX_RETRIES', 2),
+            start_max_retries=settings.getint('RATE_LIMIT_START_MAX_RETRIES', 1),
+        )
 
-    def process_response(self, request, response, spider):
-        if response.status == 429:
-            request.meta['download_delay'] = max(
-                float(request.meta.get('download_delay', 0)),
-                float(self.delay_seconds),
+    def _retry_delay(self, response: Response) -> float:
+        raw = (response.headers.get(b'Retry-After') or b'').decode('latin-1', 'replace').strip()
+        if raw.isdigit():
+            return max(float(raw), float(self.default_delay))
+        return float(self.default_delay)
+
+    def _max_for_request(self, request: Request) -> int:
+        if request.meta.get('rate_limit_start'):
+            return self.start_max_retries
+        return self.max_retries
+
+    async def process_response(self, request, response, spider):
+        if response.status != 429:
+            return response
+
+        attempt = int(request.meta.get('rate_limit_retry_times', 0))
+        max_retries = self._max_for_request(request)
+        if attempt >= max_retries:
+            logger.error(
+                '%s: giving up on HTTP 429 for %s after %d attempt(s)',
+                spider.name,
+                request.url,
+                attempt + 1,
             )
-        return response
+            return response
+
+        delay = self._retry_delay(response)
+        retry_request = request.copy()
+        retry_request.meta['rate_limit_retry_times'] = attempt + 1
+        retry_request.dont_filter = True
+
+        logger.warning(
+            '%s: HTTP 429 on %s; retry in %ds (attempt %d/%d)',
+            spider.name,
+            request.url,
+            int(delay),
+            attempt + 1,
+            max_retries,
+        )
+
+        if self.crawler.stats:
+            self.crawler.stats.inc_value('rate_limit_retry/count')
+
+        await deferred_to_future(task.deferLater(reactor, delay, lambda: None))
+        return retry_request
 
 
 # ---------------------------------------------------------------------------
